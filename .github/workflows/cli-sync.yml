@@ -1,0 +1,28 @@
+name: dogwood-cli sync
+
+# src/ops.rs and src/error.rs are copies of dogwood-cli's. This fails when they
+# drift from the pinned upstream release (on every push/PR), and flags new
+# upstream changes that need re-syncing (weekly, against upstream main).
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check-cli-sync.sh
+
+  upstream-main:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check-cli-sync.sh main
