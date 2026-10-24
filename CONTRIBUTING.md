@@ -1,0 +1,26 @@
+# Contributing to Dogwood WASM Bindings
+
+Thank you for your interest in the TypeScript/WebAssembly bindings for
+[Dogwood](https://github.com/dogwood-policy/dogwood).
+
+At this time we are **not accepting external contributions** — pull requests
+will not be merged, and we do not use GitHub issues for tracking. This may
+change in the future; watch this file for updates.
+
+## Reporting bugs
+
+Because we are not using GitHub issues yet, please do not open issues for bug
+reports or feature requests. If you have found a **security** vulnerability, do
+**not** open a public issue — follow the process in [SECURITY.md](SECURITY.md)
+instead.
+
+## Licensing
+
+Any contribution that is accepted in the future will be licensed under the
+[Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for the copyright
+notice.
+
+## Code of Conduct
+
+This project has adopted a [Code of Conduct](CODE_OF_CONDUCT.md). Please read it
+before interacting with the project.

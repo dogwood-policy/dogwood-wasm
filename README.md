@@ -26,7 +26,8 @@ dogwood-wasm/
 ├── test-live.cjs       # live-authorizer semantics (parity with replay)
 ├── test-coverage.cjs   # full surface coverage (every function, field, error path)
 ├── example.ts          # strict-mode type-check of the generated .d.ts
-└── package.json        # build / test / typecheck scripts
+├── package.json        # build / test / typecheck scripts
+└── .github/workflows/  # CI: dogwood-cli sync check
 ```
 
 ## Build
@@ -37,6 +38,7 @@ Requires Rust ≥ 1.85 (edition 2024), the wasm target, `wasm-pack`, and Node �
 rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
 
+git clone https://github.com/dogwood-policy/dogwood-wasm.git
 cd dogwood-wasm
 npm run build                   # → pkg/ (Node/CommonJS target, uses wasm-pack)
 npm install && npm run verify   # runtime tests + tsc --strict typecheck
@@ -183,3 +185,7 @@ To take a new upstream release:
 - **Temporal history is never pruned.** Growth is ~1.6 KB/event with no plateau. Long-lived instances must `reset()` periodically or cap their lifetime.
 - The live authorizer's input checks do **not** apply to `replay` (which uses the frontend's internal parser). A bare action id or backwards timestamps in a `.log` trace pass through unremarked.
 - Module size is **~8.7 MB** (~2.6 MB gzipped). Cedar, Rhai, and the parser dominate.
+
+## Contributing, security, and license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). To report a security issue, follow [SECURITY.md](SECURITY.md) rather than opening a public issue. Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
