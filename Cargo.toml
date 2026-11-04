@@ -22,7 +22,7 @@ serde_json = "1"
 serde-wasm-bindgen = "0.6"
 # Emits real TypeScript `interface`s for the serde report types into the
 # generated .d.ts.
-tsify-next = { version = "0.5", features = ["js"] }
+tsify = { version = "0.5", features = ["js"] }
 # The frontend's error types are `miette::Diagnostic`s; the error projection
 # copied from the CLI walks them.
 miette = "7"

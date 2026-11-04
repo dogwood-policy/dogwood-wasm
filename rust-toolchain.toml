@@ -1,0 +1,6 @@
+# Pinned so local builds, CI and the release build compile with the same rustc.
+# Bump deliberately (and in its own commit), not by drift.
+[toolchain]
+channel = "1.99.0"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

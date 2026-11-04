@@ -4,7 +4,7 @@
 # Both files are copies of dogwood-cli/src/{ops,error}.rs from
 # dogwood-policy/dogwood, plus wasm-only additions. Those additions are
 # stripped before diffing:
-#   - `, tsify_next::Tsify` in derive lists
+#   - `, tsify::Tsify` in derive lists
 #   - `#[tsify(...)]` attribute lines
 #   - blocks between `// wasm-only: begin` and `// wasm-only: end`
 # Anything else that differs is drift.
@@ -27,7 +27,7 @@ trap 'rm -rf "$tmp"' EXIT
 strip_wasm_only() {
   sed -e '/^[[:space:]]*\/\/ wasm-only: begin$/,/^[[:space:]]*\/\/ wasm-only: end$/d' \
       -e '/^[[:space:]]*#\[tsify(.*)\][[:space:]]*$/d' \
-      -e 's/, tsify_next::Tsify//' \
+      -e 's/, tsify::Tsify//' \
       "$1"
 }
 

@@ -2,6 +2,5 @@
 /pkg-web/
 /pkg-bundler/
 /node_modules/
-package-lock.json
 /target/
 *.orig

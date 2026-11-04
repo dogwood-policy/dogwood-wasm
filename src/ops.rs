@@ -65,7 +65,7 @@ impl SchemaInputs<'_> {
 // ─── check-parse ─────────────────────────────────────────────────────
 
 /// A per-policy summary from a successful parse (pre-lowering, schema-free).
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 pub struct PolicySummary {
     /// Number of `temporal { … }` leaves in the policy.
     pub temporal_count: usize,
@@ -82,7 +82,7 @@ pub struct PolicySummary {
 /// per-policy structural summaries. Syntax and macro errors only — schema-
 /// dependent checks (unknown attributes, type errors) are deferred to
 /// `validate`.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 #[tsify(into_wasm_abi)]
 pub struct CheckParseReport {
     pub policy_count: usize,
@@ -119,7 +119,7 @@ fn summarize_parsed(parsed: &ParsedPolicySet) -> CheckParseReport {
 /// The result of `explain`: the policy set's deterministic informalization —
 /// the structured [`Informalization`] (one phrase tree per rule, each phrase
 /// carrying its `.dw` span) and the same rendered as indented plain text.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 #[tsify(into_wasm_abi)]
 pub struct ExplainReport {
     /// The phrase trees (JSON consumers walk this; spans are `[start, end)`
@@ -163,7 +163,7 @@ pub fn explain_policies(
 /// schema, plus every finding. A fatal parse/lower error is returned as the
 /// `Err` channel instead; this report covers the type-check phase, which
 /// accumulates all findings rather than stopping at the first.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 #[tsify(into_wasm_abi)]
 pub struct ValidateReport {
     /// True iff there are no validation errors (warnings do not fail).
@@ -195,7 +195,7 @@ pub fn validate_policies(
 // ─── lower ───────────────────────────────────────────────────────────
 
 /// The Cedar artifacts produced by lowering a `.dw` policy set.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 #[tsify(into_wasm_abi)]
 pub struct LowerArtifacts {
     /// The lowered Cedar policies, rendered to `.cedar` text.
@@ -240,7 +240,7 @@ pub fn lower_to_cedar(
 
 /// Whether a decision point allowed or denied — the CLI's own verdict type
 /// (not cedar's `Decision`, which is not ours to serialize).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, tsify::Tsify)]
 #[serde(rename_all = "lowercase")]
 pub enum Verdict {
     Allow,
@@ -249,7 +249,7 @@ pub enum Verdict {
 
 /// One decision point's verdict, with its determining rules and any evaluation
 /// errors. History-only events (which yield no decision) contribute no entry.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 pub struct TimepointVerdict {
     /// 0-based index of this decision point in the decision stream.
     pub index: usize,
@@ -265,7 +265,7 @@ pub struct TimepointVerdict {
 }
 
 /// The per-timepoint verdict stream from replaying a trace.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 #[tsify(into_wasm_abi)]
 pub struct ReplayReport {
     pub verdicts: Vec<TimepointVerdict>,
@@ -355,7 +355,7 @@ fn lower_internal(
 
 /// The result of a standalone schema check: whether the artifact is
 /// well-formed, and any warnings (a valid-but-suspect schema).
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 #[tsify(into_wasm_abi)]
 pub struct SchemaCheckReport {
     /// The artifact kind that was checked (`"action"`, `"event"`, `"providers"`).
