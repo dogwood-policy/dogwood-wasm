@@ -37,6 +37,9 @@ jobs:
       # Installs the toolchain and wasm target pinned in rust-toolchain.toml.
       - run: rustup toolchain install
 
+      # Rust unit tests (src/ops.rs), run natively on the host target.
+      - run: cargo test --locked
+
       # wasm-bindgen-cli must match the wasm-bindgen version in Cargo.lock;
       # pre-installing it stops wasm-pack from downloading one at build time.
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
