@@ -1004,6 +1004,58 @@ when { principal.id == "alice" };`;
   }
 });
 
+// T-01. Cedar skips a policy whose condition errors, and the request context is
+// not validated against the schema, so an agent-supplied argument of the wrong
+// type (or a missing one) silently drops a `forbid` that reads it. Cedar then
+// returns Allow — with the error attached — from the remaining `permit`. The
+// authorizer must deny whenever evaluation errored.
+const SIZED_SCHEMA = `namespace Drupe {
+  entity Gateway;
+  entity OAuthUser = { id: String } tags String;
+  type ReadInput = { document: String, size: Long };
+  action "Read" appliesTo {
+    principal: [OAuthUser], resource: [Gateway], context: { input: ReadInput }
+  };
+}`;
+const PERMIT_UNLESS_LARGE = `permit(principal, action == Drupe::Action::"Read", resource);
+forbid(principal, action == Drupe::Action::"Read", resource)
+when { context.input.size > 100 };`;
+const sized = (ts, input) => event(ts, { logged: { input }, context: { input } });
+
+for (const [what, input] of [
+  ["a wrong-typed", { document: "d", size: "huge" }],
+  ["a missing", { document: "d" }],
+]) {
+  check(`${what} context argument read by a forbid fails closed, not open (T-01)`, () => {
+    const auth = new dw.DogwoodAuthorizer(PERMIT_UNLESS_LARGE, SIZED_SCHEMA);
+    try {
+      const d = auth.isAuthorized(sized(1, input));
+      assert(d.errors.length > 0, "the forbid's evaluation error is reported");
+      assert(d.allowed === false, "an errored forbid must not let the permit through");
+      assert(d.verdict === "deny", "the verdict agrees with allowed, got " + d.verdict);
+      assert(
+        d.determining_rules.length === 0,
+        "no rule determined a forced deny, got " + JSON.stringify(d.determining_rules),
+      );
+    } finally {
+      auth.free();
+    }
+  });
+}
+
+check("a well-typed context argument still gets the policy's own answer (T-01)", () => {
+  const auth = new dw.DogwoodAuthorizer(PERMIT_UNLESS_LARGE, SIZED_SCHEMA);
+  try {
+    const small = auth.isAuthorized(sized(1, { document: "d", size: 5 }));
+    assert(small.allowed && small.errors.length === 0, "small: " + JSON.stringify(small));
+    const large = auth.isAuthorized(sized(2, { document: "d", size: 500 }));
+    assert(!large.allowed && large.errors.length === 0, "large: " + JSON.stringify(large));
+    assert(large.determining_rules.length === 1, "the forbid determined it");
+  } finally {
+    auth.free();
+  }
+});
+
 // ═══ 9. lifecycle ════════════════════════════════════════════════════
 console.log("\nlifecycle");
 
@@ -1141,6 +1193,22 @@ check("LIMITATION: replay accepts a backwards timestamp in a trace", () => {
   assert(
     r.verdicts[0].timestamp === 100 && r.verdicts[1].timestamp === 50,
     "out of order, unremarked — the ordering contract is enforced only on the live path",
+  );
+});
+
+check("LIMITATION: replay reports an allow that carries evaluation errors (T-01)", () => {
+  // The live authorizer denies this event; replay passes Cedar's decision
+  // through from the copied CLI code. Fixed upstream in `decide`, this fails.
+  const trace =
+    `@1 scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") ` +
+    `request_context(input: { document: "d", size: "huge" }) ` +
+    `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", input: { document: "d", size: "huge" })`;
+  const r = dw.replay(PERMIT_UNLESS_LARGE, SIZED_SCHEMA, trace);
+  assert(r.verdicts.length === 1, "the trace produces a verdict");
+  assert(r.verdicts[0].errors.length > 0, "the forbid's error is reported");
+  assert(
+    r.verdicts[0].verdict === "allow",
+    "recording the CURRENT behaviour: replay allows, got " + r.verdicts[0].verdict,
   );
 });
 

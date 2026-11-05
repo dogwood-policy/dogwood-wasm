@@ -205,15 +205,19 @@ pub struct AuthorizerDecision {
     /// The event's timestamp, echoed back.
     pub timestamp: i64,
     pub verdict: Verdict,
-    /// `true` exactly when `verdict === "allow"` — the convenience Dogwood's
-    /// own `Response::allowed` exposes.
+    /// `true` exactly when `verdict === "allow"`: the policy allowed **and**
+    /// evaluation raised no errors. Stricter than Dogwood's own
+    /// `Response::allowed`, which is Cedar's decision alone — Cedar skips a
+    /// rule whose condition errors, so an errored `forbid` would otherwise let
+    /// a `permit` through.
     pub allowed: bool,
     /// The `.dw` rule indices that determined the decision. Empty for an
-    /// implicit deny (no rule matched).
+    /// implicit deny (no rule matched) and for a fail-closed deny (`errors`
+    /// non-empty).
     pub determining_rules: Vec<usize>,
-    /// Evaluation errors folded into this decision. A fail-closed deny carries
-    /// its cause here, so a non-empty `errors` on a deny means *something went
-    /// wrong*, not *policy said no*.
+    /// Evaluation errors folded into this decision. Any error forces a deny,
+    /// so a non-empty `errors` means *something went wrong*, not *policy said
+    /// no*.
     pub errors: Vec<String>,
 }
 
@@ -606,21 +610,26 @@ impl DogwoodAuthorizer {
             return Ok(None);
         };
 
-        let verdict = match response.decision() {
-            Decision::Allow => Verdict::Allow,
-            Decision::Deny => Verdict::Deny,
-        };
+        // Fail closed on any evaluation error. Cedar skips a policy whose
+        // condition errors and decides from the rest, so an argument of the
+        // wrong type (or a missing one) read by a `forbid` drops that rule and
+        // a matching `permit` comes back Allow — with the error attached.
+        // `Response::allowed()` reads only the decision, so it cannot be used.
+        let errors: Vec<String> = response.diagnostics().errors().map(str::to_string).collect();
+        let allowed = response.decision() == Decision::Allow && errors.is_empty();
         let decision = AuthorizerDecision {
             index: self.decisions,
             timestamp: event.timestamp,
-            verdict,
-            allowed: response.allowed(),
-            determining_rules: response
-                .diagnostics()
-                .reason()
-                .map(|r| r.rule_index)
-                .collect(),
-            errors: response.diagnostics().errors().map(str::to_string).collect(),
+            verdict: if allowed { Verdict::Allow } else { Verdict::Deny },
+            allowed,
+            // A forced deny was determined by no rule: the rules Cedar reports
+            // are the permits it would have allowed on.
+            determining_rules: if errors.is_empty() {
+                response.diagnostics().reason().map(|r| r.rule_index).collect()
+            } else {
+                Vec::new()
+            },
+            errors,
         };
         self.decisions += 1;
         Ok(Some(decision))

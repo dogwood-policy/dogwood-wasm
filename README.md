@@ -108,7 +108,7 @@ History-only events (anything other than `kind: "request"` by default) return `u
 - **Timestamps are seconds**, not milliseconds. A `within 1h` window is 3600. Passing `Date.now()` raw inflates every window by 1000×.
 - **`logged` and `context` are distinct.** `logged` is the durable temporal record; `context` is the ephemeral Cedar request bag. A field both need (typically `input`) must appear in both.
 - **Entity references are structured** (`{ type, id }`), never string literals. The id is escaped exactly once — no double-escaping footgun.
-- **A deny with non-empty `errors`** is a fail-closed evaluation failure, not "policy said no."
+- **Any evaluation error is a deny.** Cedar skips a rule whose condition errors (for example, a context argument of the wrong type, or a missing one) and decides from the remaining rules, so an errored `forbid` could otherwise let a `permit` through. The authorizer returns `allowed: false` whenever `errors` is non-empty, so a deny with errors is a fail-closed evaluation failure, not "policy said no."
 
 ### Input Validation
 
@@ -183,7 +183,7 @@ To take a new upstream release:
 - Dogwood is a **reference interpreter, not for production**; these bindings inherit that.
 - The `net` feature (HTTP providers) is off — cannot work in wasm.
 - **Temporal history is never pruned.** Growth is ~1.6 KB/event with no plateau. Long-lived instances must `reset()` periodically or cap their lifetime.
-- The live authorizer's input checks do **not** apply to `replay` (which uses the frontend's internal parser). A bare action id or backwards timestamps in a `.log` trace pass through unremarked.
+- The live authorizer's input checks do **not** apply to `replay` (which uses the frontend's internal parser). A bare action id or backwards timestamps in a `.log` trace pass through unremarked. `replay` also reports Cedar's decision as-is, so an event the live authorizer denies for an evaluation error can show as `allow` (with `errors`) in a replay.
 - Module size is **~8.7 MB** (~2.6 MB gzipped). Cedar, Rhai, and the parser dominate.
 
 ## Contributing, security, and license
