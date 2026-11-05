@@ -1,6 +1,6 @@
 name: release
 
-# Publishes @dogwood-policy/dogwood-wasm to npm when a version tag is pushed.
+# Publishes @aws/dogwood-wasm to npm when a version tag is pushed.
 #
 # - Gated on the full CI workflow and on manual approval through the
 #   `npm-publish` environment (required reviewers, configured in the repo).
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm-publish
-      url: https://www.npmjs.com/package/@dogwood-policy/dogwood-wasm
+      url: https://www.npmjs.com/package/@aws/dogwood-wasm
     permissions:
       contents: read
       # Mints the OIDC token npm exchanges for a short-lived publish credential.
@@ -73,7 +73,7 @@ jobs:
       - run: npm ci
 
       # Release build: default features only, so no panic hook (BSC15).
-      - run: wasm-pack build --release --target nodejs --out-dir pkg --scope dogwood-policy -- --locked
+      - run: wasm-pack build --release --target nodejs --out-dir pkg --scope aws -- --locked
 
       - run: npm run verify
 

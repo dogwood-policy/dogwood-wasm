@@ -4,7 +4,7 @@
 # immediately before `npm publish`; safe to run locally on a release build.
 #
 # Fails (non-zero) unless:
-#   - the package is named @dogwood-policy/dogwood-wasm
+#   - the package is named @aws/dogwood-wasm
 #   - its version equals the tag (without the leading `v`) and Cargo.toml's
 #   - repository.url is this GitHub repository (npm provenance requires it)
 #   - the build has no panic hook (BSC15: release builds must not log panics)
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 TAG="${1:?usage: $0 vX.Y.Z}"
-NAME="@dogwood-policy/dogwood-wasm"
+NAME="@aws/dogwood-wasm"
 REPO="https://github.com/dogwood-policy/dogwood-wasm"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,7 +33,7 @@ version="$(field p.version)"
 repo="$(field 'p.repository && p.repository.url')"
 cargo_version="$(awk -F'"' '/^version = /{print $2; exit}' "$root/Cargo.toml")"
 
-[[ "$name" == "$NAME" ]] || err "package name is '$name', expected '$NAME' (build with --scope dogwood-policy)"
+[[ "$name" == "$NAME" ]] || err "package name is '$name', expected '$NAME' (build with --scope aws)"
 [[ "$version" == "$want" ]] || err "package version $version does not match tag $TAG"
 [[ "$cargo_version" == "$want" ]] || err "Cargo.toml version $cargo_version does not match tag $TAG"
 repo_norm="${repo#git+}"; repo_norm="${repo_norm%.git}"

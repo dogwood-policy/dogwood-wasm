@@ -1,6 +1,6 @@
 # Releasing
 
-`@dogwood-policy/dogwood-wasm` is published to npm only by
+`@aws/dogwood-wasm` is published to npm only by
 [`.github/workflows/release.yml`](.github/workflows/release.yml), when a
 version tag is pushed. Nobody publishes from a laptop, and no npm token exists:
 the workflow authenticates with [npm trusted
@@ -10,8 +10,9 @@ commit that built it.
 
 ## One-time setup
 
-You need admin access to the GitHub repository and to the `dogwood-policy` npm
-organization.
+You need admin access to the GitHub repository. The `@aws` npm organization is
+managed centrally, so the npm steps are done by its administrators, through
+their onboarding process, not by this project.
 
 ### GitHub
 
@@ -28,32 +29,35 @@ organization.
    `npm-audit` and `pinned` checks. The release workflow only publishes commits
    already on `main`, so this is what makes "reviewed" mean something.
 
-### npm
+### npm (`@aws` organization administrators)
 
-1. In the `dogwood-policy` organization, create the package
-   `@dogwood-policy/dogwood-wasm`, or check that it exists and the organization
-   owns it.
-2. Package → Settings → **Trusted publishing** → GitHub Actions:
-   - Organization or user: `dogwood-policy`
+Ask the `@aws` npm organization administrators to:
+
+1. Create the package `@aws/dogwood-wasm` in the `@aws` organization, or
+   reserve the name for it.
+2. Add a **trusted publisher** for it (Package → Settings → Trusted publishing
+   → GitHub Actions):
+   - Organization or user: `dogwood-policy` (the GitHub organization, not the
+     npm one)
    - Repository: `dogwood-wasm`
    - Workflow filename: `release.yml`
    - Environment: `npm-publish`
-3. Package → Settings → **Publishing access** → *Require two-factor
+3. Set Package → Settings → **Publishing access** to *Require two-factor
    authentication and disallow tokens*. This does not affect the trusted
    publisher.
-4. Revoke any npm automation or granular tokens that can publish to the
-   organization and are not needed.
+4. Confirm that no npm token held by this project can publish the package.
 
 A new trusted-publisher configuration expires if the first publish through it
 does not happen **within 2 days**. Set it up just before the first release, or
 recreate it if it expires.
 
-**First publish.** If npm will not let you configure trusted publishing until
-the package exists, publish the first version once with a granular token: scope
-it to this package only, give it a 1-day expiry, and publish from a clean
-checkout of the release tag with `npm publish ./pkg --provenance`, after
-`scripts/prepare-release.sh` passes. Revoke the token immediately afterwards,
-then do steps 2–4. Every later version goes through the workflow.
+**First publish.** If npm will not accept a trusted publisher until the
+package exists, agree the bootstrap with the `@aws` administrators. They either
+create the package themselves, or issue a granular token scoped to this one
+package with a 1-day expiry, used once from a clean checkout of the release tag
+(`npm publish ./pkg --provenance`, after `scripts/prepare-release.sh` passes)
+and revoked immediately afterwards. Then do steps 2–4. Every later version goes
+through the workflow.
 
 ## Cutting a release
 
