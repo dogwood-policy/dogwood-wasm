@@ -120,6 +120,25 @@ The authorizer rejects (without observing into history):
 | Unknown kind | Would return `undefined` forever — nothing is ever authorized |
 | Backwards timestamp | Would silently produce wrong temporal answers |
 | Interior `::` in action id | Would resolve to nothing via the `::` split |
+| Oversized event (see below) | Would overflow the wasm stack and leave the module unusable |
+
+#### Input limits
+
+Event data usually comes from a model's tool arguments, so its size and shape are untrusted. Each limit is checked before any recursive code sees the event, and an event over a limit throws a `DogwoodError` rather than being decided:
+
+| Limit | Value |
+|---|---|
+| Nesting depth of a value, counting each `context` / `logged` group (`context.input`) or entity attribute as level 0 | 128 levels, the same limit `replay` applies to `.log` values |
+| Values in one event (scalars, arrays and objects at any depth) | 100,000 |
+| Total length of all strings in one event, object keys included | 16 Mi characters (`string.length` units) |
+
+`mcpToCedarSchema` rejects a manifest over 4 MiB or nested deeper than 128 levels.
+
+A thrown `isAuthorized` call means **no decision**. The host must treat it as a deny.
+
+#### If a call traps
+
+A `WebAssembly.RuntimeError` (for example out-of-memory) is not a `DogwoodError`. It means the wasm module itself is in an undefined state, not just one instance: every later call into the module, on any `DogwoodAuthorizer`, may fail or trap. Deny the current request, stop using the module, and restart the process or worker that loaded it. The input limits above exist so that event data cannot cause a trap.
 
 Introspection getters (`actions`, `eventKinds`, `decisionKinds`, `lastTimestamp`) let a host verify its wiring at startup.
 
@@ -136,6 +155,8 @@ using auth = new DogwoodAuthorizer(policy, actionSchema);
 ```
 
 `reset()` drops accumulated history and re-lowers the same sources. `decisionCount` tracks decisions returned.
+
+Temporal history is never pruned: every event is kept until `reset()` or `free()` (on the order of 1.6 KB per event). Use one instance per session or per principal, and `reset()` or replace it when the session ends, so history does not grow without limit.
 
 ## Errors
 

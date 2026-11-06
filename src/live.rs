@@ -225,7 +225,15 @@ pub struct AuthorizerDecision {
 /// carrying the number's **own** text (not a re-formatted one), so a decimal
 /// round-trips as authored wherever JSON preserves it. The two tagged object
 /// forms are checked before the plain-record case.
-fn to_value(json: &serde_json::Value) -> Result<Value, String> {
+///
+/// `depth` is this value's nesting level, counted as the `.log` parser counts
+/// it (a `context`/`logged` group is the depth-0 record, so its fields start at
+/// 1; an entity attribute starts at 0); past
+/// [`MAX_VALUE_DEPTH`](crate::bounds::MAX_VALUE_DEPTH) the conversion fails,
+/// exactly as the `.log` parser does, so `replay` and the live path accept the
+/// same values.
+fn to_value(json: &serde_json::Value, depth: usize) -> Result<Value, String> {
+    crate::bounds::check_value_depth(depth)?;
     Ok(match json {
         serde_json::Value::Null => Value::Null,
         serde_json::Value::Bool(b) => Value::Bool(*b),
@@ -244,7 +252,12 @@ fn to_value(json: &serde_json::Value) -> Result<Value, String> {
         },
         serde_json::Value::String(s) => Value::String(s.clone()),
         serde_json::Value::Array(items) => {
-            Value::Array(items.iter().map(to_value).collect::<Result<_, _>>()?)
+            Value::Array(
+                items
+                    .iter()
+                    .map(|item| to_value(item, depth + 1))
+                    .collect::<Result<_, _>>()?,
+            )
         }
         serde_json::Value::Object(map) => {
             // `{ __entity: { type, id } }` — a structured entity reference.
@@ -280,7 +293,7 @@ fn to_value(json: &serde_json::Value) -> Result<Value, String> {
             }
             Value::Object(
                 map.iter()
-                    .map(|(k, v)| to_value(v).map(|v| (k.clone(), v)))
+                    .map(|(k, v)| to_value(v, depth + 1).map(|v| (k.clone(), v)))
                     .collect::<Result<BTreeMap<_, _>, _>>()?,
             )
         }
@@ -304,12 +317,16 @@ fn build_event(input: &EventInput) -> Result<Event, String> {
 
     for (group, fields) in &input.logged {
         for (name, value) in fields {
-            builder = builder.field(group, name, to_value(value)?);
+            // Depth 1: in a `.log` trace the group is itself a record value at
+            // depth 0, so its fields sit at 1. Counting the same way keeps the
+            // live and replay limits identical.
+            builder = builder.field(group, name, to_value(value, 1)?);
         }
     }
     for (group, fields) in &input.context {
         for (name, value) in fields {
-            builder = builder.request_context(group, name, to_value(value)?);
+            // Depth 1, as for `logged` above.
+            builder = builder.request_context(group, name, to_value(value, 1)?);
         }
     }
 
@@ -319,7 +336,7 @@ fn build_event(input: &EventInput) -> Result<Event, String> {
         let attrs = entity
             .attrs
             .iter()
-            .map(|(name, value)| to_value(value).map(|v| (name.as_str(), v)))
+            .map(|(name, value)| to_value(value, 0).map(|v| (name.as_str(), v)))
             .collect::<Result<Vec<_>, _>>()?;
         builder = builder.entity_for(&entity.ty, &entity.id, attrs);
 
@@ -565,7 +582,9 @@ impl DogwoodAuthorizer {
     /// `response` half of a call so later policies can correlate against it.
     ///
     /// Throws a `DogwoodError` if the event is malformed (a missing `action`, a
-    /// bad `__entity` tag, a wrong-typed field) or **rejected** by
+    /// bad `__entity` tag, a wrong-typed field), **too large** (a value nested
+    /// deeper than 128 levels, or past the size limits in `bounds`), or
+    /// **rejected** by
     /// [`check`](Self::check) — an action or kind the schema does not declare, or
     /// a timestamp before the previous event's. Either way the instance is left
     /// **usable** and the temporal history untouched: the event is validated
@@ -590,6 +609,11 @@ impl DogwoodAuthorizer {
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "EventInput")] event: JsValue,
     ) -> Result<Option<AuthorizerDecision>, JsValue> {
+        // Bound the raw event first: deserializing and converting it both
+        // recurse per nesting level, and a stack overflow there would trap and
+        // leave the whole module unusable (see `bounds`).
+        crate::bounds::check_event(&event)
+            .map_err(|e| crate::throw(OpError::message(format!("invalid event: {e}"))))?;
         let event: EventInput = serde_wasm_bindgen::from_value(event)
             .map_err(|e| crate::throw(OpError::message(format!("invalid event: {e}"))))?;
         self.check(&event)
