@@ -3,6 +3,9 @@ name = "dogwood-wasm"
 version = "1.1.0"
 edition = "2024"
 license = "Apache-2.0"
+# wasm-pack copies this into pkg/package.json; npm provenance requires it to
+# match the GitHub repository the release workflow runs in.
+repository = "https://github.com/dogwood-policy/dogwood-wasm"
 publish = false
 description = "TypeScript/WebAssembly bindings for the Dogwood policy frontend (validate, lower, replay, schema checks)."
 
@@ -38,11 +41,14 @@ getrandom_legacy = { package = "getrandom", version = "0.2", features = ["js"] }
 # source; the `js` feature routes it through getrandom's JS backend.
 uuid = { version = "1", features = ["js"] }
 
-# Route Rust panics to console.error with a readable message during dev.
+# Route Rust panics to console.error with a readable message. Development
+# builds only (`npm run build:dev`): a panic message can carry policy or event
+# data, and a release build must not write it to the host's console.
 console_error_panic_hook = { version = "0.1", optional = true }
 
 [features]
-default = ["console_error_panic_hook"]
+default = []
+dev = ["console_error_panic_hook"]
 
 # Rust/LLVM now emit bulk-memory and sign-extension ops by default; the
 # wasm-opt bundled with wasm-pack must be told to accept them. These features

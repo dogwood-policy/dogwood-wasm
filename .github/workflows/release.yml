@@ -1,0 +1,101 @@
+name: release
+
+# Publishes @aws/dogwood-wasm to npm when a version tag is pushed.
+#
+# - Gated on the full CI workflow and on manual approval through the
+#   `npm-publish` environment (required reviewers, configured in the repo).
+# - Publishes only commits already on main, so nothing unreviewed ships.
+# - Authenticates with npm trusted publishing (GitHub OIDC): no npm token is
+#   stored anywhere. npm attaches a provenance attestation that ties the
+#   tarball to this workflow run and commit.
+# - Tests run against the exact pkg/ that is published.
+#
+# Setup and the release procedure: RELEASING.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/@aws/dogwood-wasm
+    permissions:
+      contents: read
+      # Mints the OIDC token npm exchanges for a short-lived publish credential.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tagged commit is on main
+        run: |
+          git fetch --no-tags --depth=1000 origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main; only merged commits are released"
+            exit 1
+          }
+
+      - run: rustup toolchain install
+
+      # wasm-bindgen-cli must match the wasm-bindgen crate version exactly, so
+      # read it from Cargo.lock rather than pinning it a second time here.
+      - id: wasm-bindgen
+        run: |
+          version=$(cargo metadata --locked --format-version 1 \
+            | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version')
+          if [ -z "$version" ]; then
+            echo "::error::wasm-bindgen not found in Cargo.lock"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: wasm-pack@0.15.0,wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+
+      # No dependency cache in the release job: it builds from a clean slate.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: npm supports trusted publishing
+        run: |
+          node -e '
+            const version = process.argv[1];
+            const [major, minor, patch] = version.split(".").map(Number);
+            const ok = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
+            if (!ok) {
+              console.log(`::error::npm ${version} is too old for trusted publishing (need >= 11.5.1)`);
+              process.exit(1);
+            }' "$(npm --version)"
+
+      - run: npm ci
+
+      # Release build: default features only, so no panic hook (BSC15).
+      - run: wasm-pack build --release --target nodejs --out-dir pkg --scope aws -- --locked
+
+      - run: npm run verify
+
+      - run: scripts/prepare-release.sh "$GITHUB_REF_NAME"
+
+      # A prerelease tag (v1.2.0-rc.1) publishes under `next`, not `latest`.
+      - name: Publish
+        run: |
+          dist_tag=latest
+          [[ "$GITHUB_REF_NAME" == *-* ]] && dist_tag=next
+          npm publish ./pkg --access public --provenance --tag "$dist_tag"
