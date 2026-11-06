@@ -51,9 +51,21 @@ jobs:
 
       - run: rustup toolchain install
 
+      # wasm-bindgen-cli must match the wasm-bindgen crate version exactly, so
+      # read it from Cargo.lock rather than pinning it a second time here.
+      - id: wasm-bindgen
+        run: |
+          version=$(cargo metadata --locked --format-version 1 \
+            | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version')
+          if [ -z "$version" ]; then
+            echo "::error::wasm-bindgen not found in Cargo.lock"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
-          tool: wasm-pack@0.15.0,wasm-bindgen@0.2.129
+          tool: wasm-pack@0.15.0,wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
 
       # No dependency cache in the release job: it builds from a clean slate.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -64,9 +76,11 @@ jobs:
       - name: npm supports trusted publishing
         run: |
           node -e '
-            const [a, b, c] = process.argv[1].split(".").map(Number);
-            if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) {
-              console.error(`npm ${process.argv[1]} is too old for trusted publishing (need >= 11.5.1)`);
+            const version = process.argv[1];
+            const [major, minor, patch] = version.split(".").map(Number);
+            const ok = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
+            if (!ok) {
+              console.log(`::error::npm ${version} is too old for trusted publishing (need >= 11.5.1)`);
               process.exit(1);
             }' "$(npm --version)"
 
