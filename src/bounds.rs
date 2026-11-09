@@ -1,4 +1,4 @@
-//! Size and nesting limits on untrusted input (BSC21).
+//! Size and nesting limits on untrusted input.
 //!
 //! Every recursive walk in the bindings and in the crates below them — the
 //! `serde-wasm-bindgen` deserializer, [`to_value`](crate::live), Cedar's

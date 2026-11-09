@@ -1,4 +1,4 @@
-// Input-bound tests (BSC21 / threat T-03).
+// Input-bound tests.
 //
 // Before these limits, a ~600-level nested tool argument overflowed the wasm
 // stack. The trap did not just fail that call: it left the module unusable, so
