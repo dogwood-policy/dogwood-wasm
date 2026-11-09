@@ -1,0 +1,105 @@
+name: ci
+
+# Builds the bindings from the committed lockfiles and runs the full test suite
+# (including the fail-closed cases) and the dependency audit. Required to pass
+# before merging to main and before a release is published.
+#
+# Every third-party action is pinned by commit SHA; Dependabot keeps the pins
+# (and the version comments) current.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # New advisories land against unchanged code; re-audit daily.
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the toolchain and wasm target pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+
+      # Rust unit tests (src/ops.rs), run natively on the host target.
+      - run: cargo test --locked
+
+      # wasm-bindgen-cli must match the wasm-bindgen crate version exactly, so
+      # read it from Cargo.lock rather than pinning it a second time here.
+      - id: wasm-bindgen
+        run: |
+          version=$(cargo metadata --locked --format-version 1 \
+            | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version')
+          if [ -z "$version" ]; then
+            echo "::error::wasm-bindgen not found in Cargo.lock"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Pre-installing wasm-bindgen-cli stops wasm-pack from downloading one at
+      # build time.
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: wasm-pack@0.15.0,wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `npm run build` passes `--locked` through to cargo: the build fails
+      # rather than silently re-resolving if Cargo.lock is out of date.
+      - run: npm run build
+
+      - run: npm run verify
+
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # cargo-deny reads the dependency graph via `cargo metadata`, so it needs
+      # the toolchain pinned in rust-toolchain.toml. Install it explicitly
+      # rather than relying on rustup's auto-install.
+      - run: rustup toolchain install
+
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-deny@0.20.2
+
+      # Advisories (RustSec), licenses, banned crates and allowed sources;
+      # policy in deny.toml.
+      - run: cargo deny --locked check
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - run: npm audit --audit-level=low

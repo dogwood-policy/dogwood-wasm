@@ -91,7 +91,7 @@ export type DogwoodValue =
 // ─── event input ─────────────────────────────────────────────────────
 
 /// A structured entity reference, deserialized from `{ type, id }`.
-#[derive(Debug, Clone, Deserialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Deserialize, tsify::Tsify)]
 pub struct EntityRef {
     /// Entity type, namespace included (`"Drupe::User"`).
     #[serde(rename = "type")]
@@ -102,7 +102,7 @@ pub struct EntityRef {
 
 /// One entity supplied to a decision: its identity plus the attributes and
 /// direct parents a policy may read (`principal.dept`, `principal in Group`).
-#[derive(Debug, Clone, Deserialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Deserialize, tsify::Tsify)]
 pub struct EntityInput {
     /// Entity type, namespace included (`"Drupe::User"`).
     #[serde(rename = "type")]
@@ -123,7 +123,7 @@ pub struct EntityInput {
 
 /// One event fed to a [`DogwoodAuthorizer`] — the JS analog of the frontend's
 /// `Event`, and a mirror of the `.log` wire format's components.
-#[derive(Debug, Clone, Deserialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Deserialize, tsify::Tsify)]
 #[tsify(from_wasm_abi)]
 pub struct EventInput {
     /// The **fully qualified** Cedar action id — `"Drupe::Action::Read"`.
@@ -197,7 +197,7 @@ fn default_kind() -> String {
 // ─── decision output ─────────────────────────────────────────────────
 
 /// The decision for one event: the verdict plus why.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 #[tsify(into_wasm_abi)]
 pub struct AuthorizerDecision {
     /// 0-based index of this decision in the authorizer's decision stream

@@ -23,7 +23,7 @@ use serde::Serialize;
 
 /// The severity of a [`Diagnostic`], projected from `miette::Severity`
 /// (which defaults to `Error` when a diagnostic does not specify one).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, tsify::Tsify)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Error,
@@ -45,7 +45,7 @@ impl From<Option<miette::Severity>> for Severity {
 /// One labelled span within the source a diagnostic points at: a byte range
 /// and an optional per-label message. Offsets index the `.dw` (or schema)
 /// source text the CLI passed in.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 pub struct Label {
     /// Byte offset of the label's start in the source.
     pub start: usize,
@@ -60,7 +60,7 @@ pub struct Label {
 /// a frontend `miette::Diagnostic`. Used for the non-fatal channel (validation
 /// errors/warnings); the fatal channel is [`OpError`], which wraps one of
 /// these plus the source text for rendering.
-#[derive(Debug, Clone, Serialize, tsify_next::Tsify)]
+#[derive(Debug, Clone, Serialize, tsify::Tsify)]
 pub struct Diagnostic {
     pub severity: Severity,
     /// The diagnostic's stable code (e.g. `"temporal"`), if it has one.
