@@ -1004,7 +1004,7 @@ when { principal.id == "alice" };`;
   }
 });
 
-// T-01. Cedar skips a policy whose condition errors, and the request context is
+// Evaluation errors. Cedar skips a policy whose condition errors, and the request context is
 // not validated against the schema, so an agent-supplied argument of the wrong
 // type (or a missing one) silently drops a `forbid` that reads it. Cedar then
 // returns Allow — with the error attached — from the remaining `permit`. The
@@ -1026,7 +1026,7 @@ for (const [what, input] of [
   ["a wrong-typed", { document: "d", size: "huge" }],
   ["a missing", { document: "d" }],
 ]) {
-  check(`${what} context argument read by a forbid fails closed, not open (T-01)`, () => {
+  check(`${what} context argument read by a forbid fails closed, not open`, () => {
     const auth = new dw.DogwoodAuthorizer(PERMIT_UNLESS_LARGE, SIZED_SCHEMA);
     try {
       const d = auth.isAuthorized(sized(1, input));
@@ -1043,7 +1043,7 @@ for (const [what, input] of [
   });
 }
 
-check("a well-typed context argument still gets the policy's own answer (T-01)", () => {
+check("a well-typed context argument still gets the policy's own answer", () => {
   const auth = new dw.DogwoodAuthorizer(PERMIT_UNLESS_LARGE, SIZED_SCHEMA);
   try {
     const small = auth.isAuthorized(sized(1, { document: "d", size: 5 }));
@@ -1056,7 +1056,7 @@ check("a well-typed context argument still gets the policy's own answer (T-01)",
   }
 });
 
-check("replay and isAuthorized agree on evaluation errors, event by event (T-01)", () => {
+check("replay and isAuthorized agree on evaluation errors, event by event", () => {
   const inputs = [
     { document: "d", size: "huge" }, // wrong-typed: fail-closed deny
     { document: "d" }, // missing: fail-closed deny
