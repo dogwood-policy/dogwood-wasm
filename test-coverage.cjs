@@ -1056,6 +1056,54 @@ check("a well-typed context argument still gets the policy's own answer (T-01)",
   }
 });
 
+check("replay and isAuthorized agree on evaluation errors, event by event (T-01)", () => {
+  const inputs = [
+    { document: "d", size: "huge" }, // wrong-typed: fail-closed deny
+    { document: "d" }, // missing: fail-closed deny
+    { document: "d", size: 5 }, // well-typed, small: allow
+    { document: "d", size: 500 }, // well-typed, large: the forbid's deny
+  ];
+  const trace = inputs
+    .map((input, i) => {
+      const v = JSON.stringify(input).replace(/"(\w+)":/g, "$1: ");
+      return (
+        `@${i + 1} scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") ` +
+        `request_context(input: ${v}) ` +
+        `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", input: ${v})`
+      );
+    })
+    .join("\n");
+  const replayed = dw.replay(PERMIT_UNLESS_LARGE, SIZED_SCHEMA, trace).verdicts;
+  assert(replayed.length === inputs.length, "one replay verdict per event, got " + replayed.length);
+  const auth = new dw.DogwoodAuthorizer(PERMIT_UNLESS_LARGE, SIZED_SCHEMA);
+  try {
+    inputs.forEach((input, i) => {
+      const live = auth.isAuthorized(sized(i + 1, input));
+      const r = replayed[i];
+      const tag = `event ${i} ${JSON.stringify(input)}`;
+      assert(r.verdict === live.verdict, `${tag}: replay=${r.verdict} live=${live.verdict}`);
+      assert(
+        JSON.stringify(r.determining_rules) === JSON.stringify(live.determining_rules),
+        `${tag}: rules replay=${JSON.stringify(r.determining_rules)} live=${JSON.stringify(live.determining_rules)}`,
+      );
+      assert(
+        (r.errors.length > 0) === (live.errors.length > 0),
+        `${tag}: errors replay=${r.errors.length} live=${live.errors.length}`,
+      );
+    });
+    assert(
+      replayed.map((v) => v.verdict).join() === "deny,deny,allow,deny",
+      "expected deny,deny,allow,deny, got " + replayed.map((v) => v.verdict).join(),
+    );
+    assert(
+      replayed[0].errors.length > 0 && replayed[0].determining_rules.length === 0,
+      "replay's forced deny carries its cause and no determining rule",
+    );
+  } finally {
+    auth.free();
+  }
+});
+
 // ═══ 9. lifecycle ════════════════════════════════════════════════════
 console.log("\nlifecycle");
 
@@ -1193,22 +1241,6 @@ check("LIMITATION: replay accepts a backwards timestamp in a trace", () => {
   assert(
     r.verdicts[0].timestamp === 100 && r.verdicts[1].timestamp === 50,
     "out of order, unremarked — the ordering contract is enforced only on the live path",
-  );
-});
-
-check("LIMITATION: replay reports an allow that carries evaluation errors (T-01)", () => {
-  // The live authorizer denies this event; replay passes Cedar's decision
-  // through from the copied CLI code. Fixed upstream in `decide`, this fails.
-  const trace =
-    `@1 scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") ` +
-    `request_context(input: { document: "d", size: "huge" }) ` +
-    `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", input: { document: "d", size: "huge" })`;
-  const r = dw.replay(PERMIT_UNLESS_LARGE, SIZED_SCHEMA, trace);
-  assert(r.verdicts.length === 1, "the trace produces a verdict");
-  assert(r.verdicts[0].errors.length > 0, "the forbid's error is reported");
-  assert(
-    r.verdicts[0].verdict === "allow",
-    "recording the CURRENT behaviour: replay allows, got " + r.verdicts[0].verdict,
   );
 });
 

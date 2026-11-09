@@ -58,6 +58,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::error::OpError;
+use crate::fail_closed::fail_closed;
 use crate::ops::{SchemaInputs, Verdict, lower_for_authorizer};
 
 // ─── the JS value type ───────────────────────────────────────────────
@@ -610,25 +611,23 @@ impl DogwoodAuthorizer {
             return Ok(None);
         };
 
-        // Fail closed on any evaluation error. Cedar skips a policy whose
-        // condition errors and decides from the rest, so an argument of the
-        // wrong type (or a missing one) read by a `forbid` drops that rule and
-        // a matching `permit` comes back Allow — with the error attached.
-        // `Response::allowed()` reads only the decision, so it cannot be used.
+        // Fail closed on any evaluation error, exactly as `replay` does (see
+        // `fail_closed`). `Response::allowed()` reads only Cedar's decision, so
+        // it cannot be used.
         let errors: Vec<String> = response.diagnostics().errors().map(str::to_string).collect();
-        let allowed = response.decision() == Decision::Allow && errors.is_empty();
+        let mut verdict = match response.decision() {
+            Decision::Allow => Verdict::Allow,
+            Decision::Deny => Verdict::Deny,
+        };
+        let mut determining_rules: Vec<usize> =
+            response.diagnostics().reason().map(|r| r.rule_index).collect();
+        fail_closed(&mut verdict, &mut determining_rules, &errors);
         let decision = AuthorizerDecision {
             index: self.decisions,
             timestamp: event.timestamp,
-            verdict: if allowed { Verdict::Allow } else { Verdict::Deny },
-            allowed,
-            // A forced deny was determined by no rule: the rules Cedar reports
-            // are the permits it would have allowed on.
-            determining_rules: if errors.is_empty() {
-                response.diagnostics().reason().map(|r| r.rule_index).collect()
-            } else {
-                Vec::new()
-            },
+            verdict,
+            allowed: verdict == Verdict::Allow,
+            determining_rules,
             errors,
         };
         self.decisions += 1;
