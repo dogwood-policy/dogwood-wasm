@@ -89,9 +89,10 @@ export interface Informalization {
 }
 "#;
 
-/// Install a panic hook so a Rust panic surfaces as a readable `console.error`
-/// (a panic in wasm otherwise aborts with an opaque `unreachable`). Idempotent;
-/// call once at startup. Automatically invoked on module load via `start`.
+/// Module start hook, invoked automatically on load. In a development build
+/// (feature `dev`, `npm run build:dev`) it installs a panic hook so a Rust panic
+/// surfaces as a readable `console.error`; a release build installs nothing,
+/// and a panic aborts with an opaque `unreachable` without logging its message.
 #[wasm_bindgen(start)]
 pub fn init() {
     #[cfg(feature = "console_error_panic_hook")]

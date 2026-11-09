@@ -7,6 +7,7 @@
     "build": "wasm-pack build --release --target nodejs --out-dir pkg -- --locked",
     "build:bundler": "wasm-pack build --release --target bundler --out-dir pkg-bundler -- --locked",
     "build:web": "wasm-pack build --release --target web --out-dir pkg-web -- --locked",
+    "build:dev": "wasm-pack build --dev --target nodejs --out-dir pkg -- --locked --features dev",
     "test": "node test.cjs && node test-live.cjs && node test-coverage.cjs && node test-bounds.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify": "npm run test && npm run typecheck"
