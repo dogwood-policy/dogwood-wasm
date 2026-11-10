@@ -21,6 +21,7 @@
 //! | `checkProviders`       | providers.json check  | no                   |
 //! | `mcpToCedarSchema`     | MCP manifest -> Cedar | no                   |
 
+mod bounds;
 mod error;
 mod fail_closed;
 pub mod live;
@@ -253,5 +254,14 @@ pub fn check_providers(json: &str) -> Result<SchemaCheckReport, JsValue> {
 /// `tools/list` manifest, layered on the embedded Drupe template.
 #[wasm_bindgen(js_name = mcpToCedarSchema)]
 pub fn mcp_to_cedar_schema(manifest_json: &str) -> Result<String, JsValue> {
+    // A manifest comes from a third-party MCP server, and its parser recurses
+    // per nesting level with no cap of its own; bound it before parsing.
+    bounds::check_json_text(
+        "manifest",
+        manifest_json,
+        bounds::MAX_MANIFEST_BYTES,
+        bounds::MAX_MANIFEST_DEPTH,
+    )
+    .map_err(|e| throw(OpError::message(e)))?;
     ops::generate_mcp_schema(manifest_json).map_err(throw)
 }
