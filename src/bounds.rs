@@ -61,6 +61,33 @@ fn too_deep() -> String {
     format!("event value nested deeper than the limit of {MAX_VALUE_DEPTH}")
 }
 
+/// Admit a container's `children` at `child_depth`, before any of them is
+/// pushed onto the work stack. Fails when they would sit past `max_depth`, or
+/// would take the event past the value-count limit. An empty container admits
+/// nothing, so there is nothing to check.
+fn admit(
+    children: usize,
+    child_depth: usize,
+    max_depth: usize,
+    values: &mut usize,
+) -> Result<(), String> {
+    if children == 0 {
+        return Ok(());
+    }
+    if child_depth > max_depth {
+        // Past the framing allowance the event is either too deep or cyclic;
+        // this walk cannot tell which, so say both.
+        return Err(format!("{} (or is cyclic)", too_deep()));
+    }
+    *values = values.saturating_add(children);
+    if *values > MAX_EVENT_VALUES {
+        return Err(format!(
+            "event has more than the limit of {MAX_EVENT_VALUES} values"
+        ));
+    }
+    Ok(())
+}
+
 /// Check a raw JS event against the depth, count and string-length limits
 /// before it is deserialized.
 ///
@@ -69,25 +96,21 @@ fn too_deep() -> String {
 /// is rejected as too deep rather than looping. This is a coarse, structural
 /// bound over the whole event; the exact per-value limit is applied again by
 /// `to_value`, once the event's shape is known.
+///
+/// Both limits are checked when a container's children are *admitted* (see
+/// [`admit`]), before any of them is pushed, not when they are popped. So the
+/// work stack never holds more than [`MAX_EVENT_VALUES`] entries however wide
+/// the input is: a 50M-element array is rejected from its length alone,
+/// instead of first growing the stack — and wasm linear memory, which never
+/// shrinks — by 50M entries, an allocation that could itself fail and trap
+/// the module.
 pub fn check_event(event: &JsValue) -> Result<(), String> {
     let max_depth = MAX_VALUE_DEPTH + EVENT_FRAMING_DEPTH;
     let mut stack: Vec<(JsValue, usize)> = vec![(event.clone(), 0)];
-    let mut values = 0usize;
+    let mut values = 1usize; // the root, already on the stack
     let mut string_length = 0usize;
 
     while let Some((value, depth)) = stack.pop() {
-        values += 1;
-        if values > MAX_EVENT_VALUES {
-            return Err(format!(
-                "event has more than the limit of {MAX_EVENT_VALUES} values"
-            ));
-        }
-        if depth > max_depth {
-            // Past the framing allowance the event is either too deep or
-            // cyclic; this walk cannot tell which, so say both.
-            return Err(format!("{} (or is cyclic)", too_deep()));
-        }
-
         if let Some(s) = value.dyn_ref::<JsString>() {
             add_string(s.length(), &mut string_length)?;
             continue;
@@ -96,24 +119,33 @@ pub fn check_event(event: &JsValue) -> Result<(), String> {
             continue; // number, boolean, null, undefined, bigint, symbol
         }
 
+        let child_depth = depth + 1;
         if Array::is_array(&value) {
             let array: &Array = value.unchecked_ref();
+            admit(array.length() as usize, child_depth, max_depth, &mut values)?;
             for item in array.iter() {
-                stack.push((item, depth + 1));
+                stack.push((item, child_depth));
             }
         } else if let Some(map) = value.dyn_ref::<Map>() {
+            // A `Map`'s keys are walked as values too.
+            let children = (map.size() as usize).saturating_mul(2);
+            admit(children, child_depth, max_depth, &mut values)?;
             map.for_each(&mut |v, k| {
-                stack.push((k, depth + 1));
-                stack.push((v, depth + 1));
+                stack.push((k, child_depth));
+                stack.push((v, child_depth));
             });
         } else {
+            // `Object::entries` builds the entries on the JS heap before their
+            // count is known. That memory is garbage-collected, not wasm linear
+            // memory, and no larger than the object the caller already holds.
             let entries = Object::entries(value.unchecked_ref::<Object>());
+            admit(entries.length() as usize, child_depth, max_depth, &mut values)?;
             for entry in entries.iter() {
                 let entry: Array = entry.unchecked_into();
                 if let Some(key) = entry.get(0).dyn_ref::<JsString>() {
                     add_string(key.length(), &mut string_length)?;
                 }
-                stack.push((entry.get(1), depth + 1));
+                stack.push((entry.get(1), child_depth));
             }
         }
     }

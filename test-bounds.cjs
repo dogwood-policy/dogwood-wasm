@@ -8,7 +8,20 @@
 //
 // The tests deliberately share one module instance: if any bound regresses,
 // the trap poisons the module and every later test fails too, loudly.
+// The nodejs glue does not export the instance, so capture its linear memory
+// while it is created; the wide-input test asserts that memory does not grow.
+let wasmMemory = null;
+const RealInstance = WebAssembly.Instance;
+WebAssembly.Instance = function (module, imports) {
+  const instance = new RealInstance(module, imports);
+  wasmMemory = instance.exports.memory;
+  return instance;
+};
 const dw = require("./pkg/dogwood_wasm.js");
+WebAssembly.Instance = RealInstance;
+if (!(wasmMemory instanceof WebAssembly.Memory)) {
+  throw new Error("could not capture the module's WebAssembly.Memory");
+}
 
 let pass = 0,
   fail = 0;
@@ -199,6 +212,26 @@ check("an event with more than 100,000 values throws", () => {
   // A large but in-bounds array is fine.
   assert(auth.isAuthorized(readEvent(2, new Array(10000).fill(0))).allowed, "10,000 values ok");
   auth.free();
+});
+
+check("a very wide array or Map is rejected before its elements are walked", () => {
+  // The value-count limit is checked from a container's length, before any
+  // element is pushed onto the work stack. Counting on pop instead would first
+  // push all 5M elements (tens of MB of wasm linear memory, which never
+  // shrinks, and an allocation that could fail and trap the module).
+  const auth = new dw.DogwoodAuthorizer(POLICY, ACTION_SCHEMA);
+  const before = wasmMemory.buffer.byteLength;
+  const TOO_MANY = /more than the limit of 100000 values/;
+  throwsDogwoodError(() => auth.isAuthorized(readEvent(1, new Array(5_000_000).fill(0))), TOO_MANY);
+  const wideMap = new Map();
+  for (let i = 0; i < 60_000; i++) wideMap.set("k" + i, i); // 120,000 keys + values
+  throwsDogwoodError(() => auth.isAuthorized(readEvent(2, wideMap)), TOO_MANY);
+  assert(auth.decisionCount === 0, "rejected events are not observed");
+  // The work stack holds at most 100,000 entries (under 1 MiB on wasm32).
+  const grown = wasmMemory.buffer.byteLength - before;
+  assert(grown < 4 * 1024 * 1024, `wasm memory grew by ${grown} bytes`);
+  auth.free();
+  assertModuleUsable();
 });
 
 check("event strings over 16 Mi characters throw; a 1 MiB argument is fine", () => {
