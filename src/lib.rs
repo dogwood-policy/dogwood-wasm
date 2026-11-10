@@ -22,6 +22,7 @@
 //! | `mcpToCedarSchema`     | MCP manifest -> Cedar | no                   |
 
 mod error;
+mod fail_closed;
 pub mod live;
 mod ops;
 pub(crate) mod providers;
@@ -186,6 +187,9 @@ pub fn lower(
 
 /// Lower, then drive a `.log` event trace through a stateful authorizer,
 /// returning the per-decision verdict stream.
+///
+/// Any evaluation error forces a deny, exactly as in
+/// `DogwoodAuthorizer::isAuthorized` (see [`fail_closed`]).
 #[wasm_bindgen]
 pub fn replay(
     source: &str,
@@ -197,7 +201,13 @@ pub fn replay(
 ) -> Result<ReplayReport, JsValue> {
     let schema =
         inputs(event_schema.as_deref(), providers.as_deref(), macros.as_deref()).map_err(throw)?;
-    ops::replay_trace(source, &schema, action_schema, log).map_err(throw)
+    let mut report = ops::replay_trace(source, &schema, action_schema, log).map_err(throw)?;
+    // Applied here rather than in the copied `ops.rs`, which must match
+    // dogwood-cli (passing Cedar's decision through).
+    for v in &mut report.verdicts {
+        fail_closed::fail_closed(&mut v.verdict, &mut v.determining_rules, &v.errors);
+    }
+    Ok(report)
 }
 
 /// Parse (with macro expansion) and informalize a `.dw` policy set into
