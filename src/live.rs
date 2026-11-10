@@ -58,6 +58,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::error::OpError;
+use crate::fail_closed::fail_closed;
 use crate::ops::{SchemaInputs, Verdict, lower_for_authorizer};
 
 // ─── the JS value type ───────────────────────────────────────────────
@@ -205,15 +206,19 @@ pub struct AuthorizerDecision {
     /// The event's timestamp, echoed back.
     pub timestamp: i64,
     pub verdict: Verdict,
-    /// `true` exactly when `verdict === "allow"` — the convenience Dogwood's
-    /// own `Response::allowed` exposes.
+    /// `true` exactly when `verdict === "allow"`: the policy allowed **and**
+    /// evaluation raised no errors. Stricter than Dogwood's own
+    /// `Response::allowed`, which is Cedar's decision alone — Cedar skips a
+    /// rule whose condition errors, so an errored `forbid` would otherwise let
+    /// a `permit` through.
     pub allowed: bool,
     /// The `.dw` rule indices that determined the decision. Empty for an
-    /// implicit deny (no rule matched).
+    /// implicit deny (no rule matched) and for a fail-closed deny (`errors`
+    /// non-empty).
     pub determining_rules: Vec<usize>,
-    /// Evaluation errors folded into this decision. A fail-closed deny carries
-    /// its cause here, so a non-empty `errors` on a deny means *something went
-    /// wrong*, not *policy said no*.
+    /// Evaluation errors folded into this decision. Any error forces a deny,
+    /// so a non-empty `errors` means *something went wrong*, not *policy said
+    /// no*.
     pub errors: Vec<String>,
 }
 
@@ -630,21 +635,24 @@ impl DogwoodAuthorizer {
             return Ok(None);
         };
 
-        let verdict = match response.decision() {
+        // Fail closed on any evaluation error, exactly as `replay` does (see
+        // `fail_closed`). `Response::allowed()` reads only Cedar's decision, so
+        // it cannot be used.
+        let errors: Vec<String> = response.diagnostics().errors().map(str::to_string).collect();
+        let mut verdict = match response.decision() {
             Decision::Allow => Verdict::Allow,
             Decision::Deny => Verdict::Deny,
         };
+        let mut determining_rules: Vec<usize> =
+            response.diagnostics().reason().map(|r| r.rule_index).collect();
+        fail_closed(&mut verdict, &mut determining_rules, &errors);
         let decision = AuthorizerDecision {
             index: self.decisions,
             timestamp: event.timestamp,
             verdict,
-            allowed: response.allowed(),
-            determining_rules: response
-                .diagnostics()
-                .reason()
-                .map(|r| r.rule_index)
-                .collect(),
-            errors: response.diagnostics().errors().map(str::to_string).collect(),
+            allowed: verdict == Verdict::Allow,
+            determining_rules,
+            errors,
         };
         self.decisions += 1;
         Ok(Some(decision))

@@ -1004,6 +1004,106 @@ when { principal.id == "alice" };`;
   }
 });
 
+// Evaluation errors. Cedar skips a policy whose condition errors, and the request context is
+// not validated against the schema, so an agent-supplied argument of the wrong
+// type (or a missing one) silently drops a `forbid` that reads it. Cedar then
+// returns Allow — with the error attached — from the remaining `permit`. The
+// authorizer must deny whenever evaluation errored.
+const SIZED_SCHEMA = `namespace Drupe {
+  entity Gateway;
+  entity OAuthUser = { id: String } tags String;
+  type ReadInput = { document: String, size: Long };
+  action "Read" appliesTo {
+    principal: [OAuthUser], resource: [Gateway], context: { input: ReadInput }
+  };
+}`;
+const PERMIT_UNLESS_LARGE = `permit(principal, action == Drupe::Action::"Read", resource);
+forbid(principal, action == Drupe::Action::"Read", resource)
+when { context.input.size > 100 };`;
+const sized = (ts, input) => event(ts, { logged: { input }, context: { input } });
+
+for (const [what, input] of [
+  ["a wrong-typed", { document: "d", size: "huge" }],
+  ["a missing", { document: "d" }],
+]) {
+  check(`${what} context argument read by a forbid fails closed, not open`, () => {
+    const auth = new dw.DogwoodAuthorizer(PERMIT_UNLESS_LARGE, SIZED_SCHEMA);
+    try {
+      const d = auth.isAuthorized(sized(1, input));
+      assert(d.errors.length > 0, "the forbid's evaluation error is reported");
+      assert(d.allowed === false, "an errored forbid must not let the permit through");
+      assert(d.verdict === "deny", "the verdict agrees with allowed, got " + d.verdict);
+      assert(
+        d.determining_rules.length === 0,
+        "no rule determined a forced deny, got " + JSON.stringify(d.determining_rules),
+      );
+    } finally {
+      auth.free();
+    }
+  });
+}
+
+check("a well-typed context argument still gets the policy's own answer", () => {
+  const auth = new dw.DogwoodAuthorizer(PERMIT_UNLESS_LARGE, SIZED_SCHEMA);
+  try {
+    const small = auth.isAuthorized(sized(1, { document: "d", size: 5 }));
+    assert(small.allowed && small.errors.length === 0, "small: " + JSON.stringify(small));
+    const large = auth.isAuthorized(sized(2, { document: "d", size: 500 }));
+    assert(!large.allowed && large.errors.length === 0, "large: " + JSON.stringify(large));
+    assert(large.determining_rules.length === 1, "the forbid determined it");
+  } finally {
+    auth.free();
+  }
+});
+
+check("replay and isAuthorized agree on evaluation errors, event by event", () => {
+  const inputs = [
+    { document: "d", size: "huge" }, // wrong-typed: fail-closed deny
+    { document: "d" }, // missing: fail-closed deny
+    { document: "d", size: 5 }, // well-typed, small: allow
+    { document: "d", size: 500 }, // well-typed, large: the forbid's deny
+  ];
+  const trace = inputs
+    .map((input, i) => {
+      const v = JSON.stringify(input).replace(/"(\w+)":/g, "$1: ");
+      return (
+        `@${i + 1} scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") ` +
+        `request_context(input: ${v}) ` +
+        `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", input: ${v})`
+      );
+    })
+    .join("\n");
+  const replayed = dw.replay(PERMIT_UNLESS_LARGE, SIZED_SCHEMA, trace).verdicts;
+  assert(replayed.length === inputs.length, "one replay verdict per event, got " + replayed.length);
+  const auth = new dw.DogwoodAuthorizer(PERMIT_UNLESS_LARGE, SIZED_SCHEMA);
+  try {
+    inputs.forEach((input, i) => {
+      const live = auth.isAuthorized(sized(i + 1, input));
+      const r = replayed[i];
+      const tag = `event ${i} ${JSON.stringify(input)}`;
+      assert(r.verdict === live.verdict, `${tag}: replay=${r.verdict} live=${live.verdict}`);
+      assert(
+        JSON.stringify(r.determining_rules) === JSON.stringify(live.determining_rules),
+        `${tag}: rules replay=${JSON.stringify(r.determining_rules)} live=${JSON.stringify(live.determining_rules)}`,
+      );
+      assert(
+        (r.errors.length > 0) === (live.errors.length > 0),
+        `${tag}: errors replay=${r.errors.length} live=${live.errors.length}`,
+      );
+    });
+    assert(
+      replayed.map((v) => v.verdict).join() === "deny,deny,allow,deny",
+      "expected deny,deny,allow,deny, got " + replayed.map((v) => v.verdict).join(),
+    );
+    assert(
+      replayed[0].errors.length > 0 && replayed[0].determining_rules.length === 0,
+      "replay's forced deny carries its cause and no determining rule",
+    );
+  } finally {
+    auth.free();
+  }
+});
+
 // ═══ 9. lifecycle ════════════════════════════════════════════════════
 console.log("\nlifecycle");
 

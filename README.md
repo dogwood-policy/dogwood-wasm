@@ -18,6 +18,7 @@ dogwood-wasm/
 │   ├── live.rs         # stateful DogwoodAuthorizer class
 │   ├── ops.rs          # frontend operations (copied from dogwood-cli)
 │   ├── error.rs        # miette → structured diagnostic (copied from dogwood-cli)
+│   ├── fail_closed.rs  # deny-on-evaluation-error rule shared by replay and live
 │   └── providers.rs    # wasm-specific guard on provider declarations
 ├── scripts/
 │   ├── check-cli-sync.sh  # diff ops.rs/error.rs against upstream dogwood-cli
@@ -112,7 +113,7 @@ History-only events (anything other than `kind: "request"` by default) return `u
 - **Timestamps are seconds**, not milliseconds. A `within 1h` window is 3600. Passing `Date.now()` raw inflates every window by 1000×.
 - **`logged` and `context` are distinct.** `logged` is the durable temporal record; `context` is the ephemeral Cedar request bag. A field both need (typically `input`) must appear in both.
 - **Entity references are structured** (`{ type, id }`), never string literals. The id is escaped exactly once — no double-escaping footgun.
-- **A deny with non-empty `errors`** is a fail-closed evaluation failure, not "policy said no."
+- **Any evaluation error is a deny.** Cedar skips a rule whose condition errors (for example, a context argument of the wrong type, or a missing one) and decides from the remaining rules, so an errored `forbid` could otherwise let a `permit` through. The authorizer returns `allowed: false` whenever `errors` is non-empty, and `replay` applies the same rule to every verdict, so a deny with errors is a fail-closed evaluation failure, not "policy said no."
 
 ### Input Validation
 
