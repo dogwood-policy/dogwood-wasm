@@ -22,16 +22,16 @@ through the open source program office.
 
 ### GitHub
 
-Releases are controlled by the `dogwood-policy/dogwood-org-owners` team: only
+Releases are controlled by the `dogwood-policy/dogwood-dev` team: only
 its members can create a `v*` tag, and a release needs the approval of a member
 other than the one who pushed the tag. Every maintainer of this repository is
 an admin, so admin bypass is turned off wherever GitHub offers it.
 
-1. **Team access.** Settings → Collaborators and teams → add
-   `dogwood-org-owners` with the **Read** role. GitHub accepts a team as a
-   required reviewer only if it has access to the repository.
+1. **Team access.** Settings → Collaborators and teams → give `dogwood-dev`
+   at least the **Read** role. GitHub accepts a team as a required reviewer
+   only if it has access to the repository.
 2. **Environment.** Settings → Environments → New environment `npm-publish`.
-   - **Required reviewers:** the `dogwood-org-owners` team.
+   - **Required reviewers:** the `dogwood-dev` team.
    - Turn on **Prevent self-review**, so whoever pushed the tag cannot approve
      the release.
    - Turn off **Allow administrators to bypass configured protection rules**.
@@ -43,8 +43,8 @@ an admin, so admin bypass is turned off wherever GitHub offers it.
    rulesets, both targeting the tag pattern `v*` with enforcement Active:
    - `v* tags: immutable`: Restrict updates, Restrict deletions, Block force
      pushes. No bypass for anyone, so a published version's tag can never move.
-   - `v* tags: creation restricted to dogwood-org-owners`: Restrict creations,
-     with the `dogwood-org-owners` team as the only bypass actor (always).
+   - `v* tags: creation restricted to dogwood-dev`: Restrict creations,
+     with the `dogwood-dev` team as the only bypass actor (always).
 4. **Branch ruleset for `main`** requiring the `build-test`, `cargo-deny`,
    `npm-audit` and `pinned` checks. The release workflow only publishes commits
    already on `main`, so this is what makes "reviewed" mean something.
@@ -84,7 +84,7 @@ through the workflow.
 1. On a branch, set the version in `Cargo.toml` (`version = "X.Y.Z"`). Update
    `Cargo.lock` with `cargo update -p dogwood-wasm`, then open a PR and merge it
    once CI is green.
-2. A member of `dogwood-org-owners` tags the merge commit on `main` and pushes
+2. A member of `dogwood-dev` tags the merge commit on `main` and pushes
    the tag. Nobody else can create a `v*` tag, and once pushed it cannot be
    moved or deleted.
    ```sh
@@ -95,7 +95,7 @@ through the workflow.
    A prerelease tag (`vX.Y.Z-rc.1`) publishes under the `next` dist-tag, not
    `latest`.
 3. The `release` workflow runs CI and then waits for approval on the
-   `npm-publish` environment. **Another** member of `dogwood-org-owners`, not
+   `npm-publish` environment. **Another** member of `dogwood-dev`, not
    the one who pushed the tag, approves it: Actions → the `release` run →
    **Review deployments** → `npm-publish` → Approve and deploy. Before
    approving, the reviewer checks that the tag points at the intended commit on
