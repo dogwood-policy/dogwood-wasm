@@ -14,18 +14,38 @@ You need admin access to the GitHub repository. The `@aws` npm organization is
 managed centrally, so the npm steps are done by its administrators, through
 their onboarding process, not by this project.
 
+**The repository must be public before the first release.** npm generates
+provenance only for packages published from a public repository, and the
+workflow publishes with `--provenance`, so a release from a private repository
+fails. Changing the visibility is restricted by an enterprise ruleset and goes
+through the open source program office.
+
 ### GitHub
 
-1. **Environment.** Settings → Environments → New environment `npm-publish`.
-   - **Required reviewers:** at least one maintainer other than whoever pushes tags.
-   - Turn on **Prevent self-review**.
+Releases are controlled by the `dogwood-policy/dogwood-org-owners` team: only
+its members can create a `v*` tag, and a release needs the approval of a member
+other than the one who pushed the tag. Every maintainer of this repository is
+an admin, so admin bypass is turned off wherever GitHub offers it.
+
+1. **Team access.** Settings → Collaborators and teams → add
+   `dogwood-org-owners` with the **Read** role. GitHub accepts a team as a
+   required reviewer only if it has access to the repository.
+2. **Environment.** Settings → Environments → New environment `npm-publish`.
+   - **Required reviewers:** the `dogwood-org-owners` team.
+   - Turn on **Prevent self-review**, so whoever pushed the tag cannot approve
+     the release.
+   - Turn off **Allow administrators to bypass configured protection rules**.
+     Otherwise any admin could publish without a second approver.
    - **Deployment branches and tags:** Selected branches and tags → add the tag
      pattern `v*`.
-2. **Tag ruleset.** Settings → Rules → Rulesets → New tag ruleset.
-   - Target: tag pattern `v*`; Enforcement: Active; no bypass.
-   - Rules: Restrict creations (bypass: maintainers only), Restrict updates,
-     Restrict deletions, Block force pushes.
-3. **Branch ruleset for `main`** requiring the `build-test`, `cargo-deny`,
+3. **Tag rulesets.** Settings → Rules → Rulesets → New tag ruleset. GitHub
+   applies a bypass list to a whole ruleset, not to one rule, so this takes two
+   rulesets, both targeting the tag pattern `v*` with enforcement Active:
+   - `v* tags: immutable`: Restrict updates, Restrict deletions, Block force
+     pushes. No bypass for anyone, so a published version's tag can never move.
+   - `v* tags: creation restricted to dogwood-org-owners`: Restrict creations,
+     with the `dogwood-org-owners` team as the only bypass actor (always).
+4. **Branch ruleset for `main`** requiring the `build-test`, `cargo-deny`,
    `npm-audit` and `pinned` checks. The release workflow only publishes commits
    already on `main`, so this is what makes "reviewed" mean something.
 
@@ -64,7 +84,9 @@ through the workflow.
 1. On a branch, set the version in `Cargo.toml` (`version = "X.Y.Z"`). Update
    `Cargo.lock` with `cargo update -p dogwood-wasm`, then open a PR and merge it
    once CI is green.
-2. Tag the merge commit on `main` and push the tag:
+2. A member of `dogwood-org-owners` tags the merge commit on `main` and pushes
+   the tag. Nobody else can create a `v*` tag, and once pushed it cannot be
+   moved or deleted.
    ```sh
    git checkout main && git pull
    git tag -s vX.Y.Z -m "vX.Y.Z"
@@ -73,8 +95,11 @@ through the workflow.
    A prerelease tag (`vX.Y.Z-rc.1`) publishes under the `next` dist-tag, not
    `latest`.
 3. The `release` workflow runs CI and then waits for approval on the
-   `npm-publish` environment. Before approving, the reviewer checks that the tag
-   points at the intended commit on `main` and that the `ci` jobs passed.
+   `npm-publish` environment. **Another** member of `dogwood-org-owners`, not
+   the one who pushed the tag, approves it: Actions → the `release` run →
+   **Review deployments** → `npm-publish` → Approve and deploy. Before
+   approving, the reviewer checks that the tag points at the intended commit on
+   `main` and that the `ci` jobs passed.
 4. The publish job builds a release build (no `dev` feature, so no panic hook),
    runs `npm run verify` against that exact `pkg/`, and runs
    `scripts/prepare-release.sh` (name, version, repository and panic-hook
