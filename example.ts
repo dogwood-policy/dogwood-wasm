@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Type-checking sample: exercises the generated TypeScript definitions.
 // Compiled with `tsc --strict --noEmit` — no JS is emitted; this only proves
 // the .d.ts is sound and the report shapes are correctly typed.

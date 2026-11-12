@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Surface-coverage suite: every exported function, every report field, every
 // optional argument, every error path, and every value-conversion branch.
 //

@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Input-bound tests.
 //
 // Before these limits, a ~600-level nested tool argument overflowed the wasm

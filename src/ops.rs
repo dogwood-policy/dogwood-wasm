@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! The core policy operations behind each command: `check-parse`, `validate`,
 //! `lower`, `replay`, and `explain`. Each is one task-oriented function that reads `&str`
 //! sources, drives the `dogwood-language` frontend, and returns an owned,

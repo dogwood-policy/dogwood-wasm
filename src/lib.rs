@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! TypeScript / WebAssembly bindings for the Dogwood policy frontend.
 //!
 //! This crate is a thin `wasm-bindgen` shell over the same curated public
