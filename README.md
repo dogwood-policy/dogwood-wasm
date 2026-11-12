@@ -30,7 +30,7 @@ dogwood-wasm/
 ├── test-coverage.cjs   # full surface coverage (every function, field, error path)
 ├── example.ts          # strict-mode type-check of the generated .d.ts
 ├── package.json        # build / test / typecheck scripts
-├── RELEASING.md        # npm publishing setup and release procedure
+├── RELEASING.md        # npm release procedure
 └── .github/workflows/  # ci (build, tests, audits), dogwood-cli sync, release
 ```
 
