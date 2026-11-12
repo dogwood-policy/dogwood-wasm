@@ -10,7 +10,7 @@ name: release
 #   tarball to this workflow run and commit.
 # - Tests run against the exact pkg/ that is published.
 #
-# Setup and the release procedure: RELEASING.md.
+# Release procedure: RELEASING.md.
 on:
   push:
     tags: ["v*"]
