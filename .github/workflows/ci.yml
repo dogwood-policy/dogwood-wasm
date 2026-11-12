@@ -56,7 +56,7 @@ jobs:
       # build time.
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
-          tool: wasm-pack@0.15.0,wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+          tool: wasm-pack@0.15.0,wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }},cargo-about@0.9.3
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -70,6 +70,11 @@ jobs:
       - run: npm run build
 
       - run: npm run verify
+
+      # THIRD-PARTY-NOTICES ships in the npm package. Generating it on every
+      # change means a dependency update with an unreadable or unaccepted
+      # license fails here, not at release time.
+      - run: scripts/third-party-notices.sh "$RUNNER_TEMP/THIRD-PARTY-NOTICES"
 
   cargo-deny:
     runs-on: ubuntu-latest

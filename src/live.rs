@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! The **live** (incremental) authorizer: Dogwood's stateful `Authorizer`
 //! exposed to JavaScript as a class.
 //!

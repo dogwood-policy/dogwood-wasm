@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! A wasm-specific guard on provider declarations.
 //!
 //! An information provider's Rhai script may be given inline (`script`) or as an

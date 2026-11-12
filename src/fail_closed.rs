@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! The fail-closed rule shared by `replay` and `DogwoodAuthorizer::isAuthorized`.
 //!
 //! Cedar skips a policy whose condition errors and decides from the rest, and

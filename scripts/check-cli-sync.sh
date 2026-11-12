@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # Check that src/ops.rs and src/error.rs still match dogwood-cli upstream.
 #
 # Both files are copies of dogwood-cli/src/{ops,error}.rs from
@@ -7,6 +10,8 @@
 #   - `, tsify::Tsify` in derive lists
 #   - `#[tsify(...)]` attribute lines
 #   - blocks between `// wasm-only: begin` and `// wasm-only: end`
+#   - this repository's two-line license header (and the blank line after it)
+#     at the top of the file
 # Anything else that differs is drift.
 #
 # Usage: scripts/check-cli-sync.sh [REF]
@@ -24,11 +29,19 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+LICENSE_HEADER_1='// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.'
+LICENSE_HEADER_2='// SPDX-License-Identifier: Apache-2.0'
+
 strip_wasm_only() {
+  awk -v h1="$LICENSE_HEADER_1" -v h2="$LICENSE_HEADER_2" '
+    NR == 1 && $0 == h1 { header = 1; next }
+    header && NR == 2 && $0 == h2 { next }
+    header && NR == 3 && $0 == "" { next }
+    { print }
+  ' "$1" |
   sed -e '/^[[:space:]]*\/\/ wasm-only: begin$/,/^[[:space:]]*\/\/ wasm-only: end$/d' \
       -e '/^[[:space:]]*#\[tsify(.*)\][[:space:]]*$/d' \
-      -e 's/, tsify::Tsify//' \
-      "$1"
+      -e 's/, tsify::Tsify//'
 }
 
 # The pin must track the dogwood-language release actually locked, or the check

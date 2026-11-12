@@ -20,6 +20,14 @@ Any contribution that is accepted in the future will be licensed under the
 [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for the copyright
 notice.
 
+Every source, test and script file starts with this header (after the `#!`
+line in a shell script, with `#` instead of `//`):
+
+```
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+```
+
 ## Code of Conduct
 
 This project has adopted a [Code of Conduct](CODE_OF_CONDUCT.md). Please read it

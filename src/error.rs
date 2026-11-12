@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! The CLI's owned error and diagnostic types.
 //!
 //! The frontend's result types (`Error`, `ValidationError`, `ParseErrors`, …)

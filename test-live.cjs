@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Tests for the live, stateful authorizer (`DogwoodAuthorizer`).
 //
 // The load-bearing test here is **parity with `replay`**: the same events, fed
