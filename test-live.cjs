@@ -41,7 +41,7 @@ namespace Drupe {
     action "Read" appliesTo {
         principal: [User],
         resource: [Gateway],
-        context: { input: ReadInput, output: ReadOutput }
+        context: { input: ReadInput, output?: ReadOutput }
     };
 }`;
 
@@ -462,6 +462,29 @@ check("kind defaults to request when omitted", () => {
   const d = auth.isAuthorized(event);
   assert(d !== undefined, "omitted kind defaults to the decision kind `request`");
   assert(d.verdict === "allow", "and decides normally");
+});
+
+check("a nonconforming history event throws instead of vanishing", () => {
+  // A response whose logged output has the wrong type does not conform to its
+  // signature, so the authorizer does not record it. Returning `undefined` (as
+  // for a recorded response) would hide that; it throws, and the history is
+  // untouched: the read it should have enabled is still denied.
+  const auth = new dw.DogwoodAuthorizer(TEMPORAL_POLICY, ACTION_SCHEMA);
+  const bad = responseEvent(1000);
+  bad.logged.output = { content: 7 };
+  let threw = null;
+  try {
+    auth.isAuthorized(bad);
+  } catch (e) {
+    threw = e;
+  }
+  assert(threw && threw.name === "DogwoodError", "expected a DogwoodError, got " + threw);
+  assert(/event rejected, not recorded/.test(threw.message), threw.message);
+  assert(auth.lastTimestamp === undefined, "the rejected event set no timestamp");
+  assert(auth.isAuthorized(readEvent(1001)).verdict === "deny", "nothing was recorded");
+  assert(auth.isAuthorized(responseEvent(1002)) === undefined, "a conforming response records");
+  assert(auth.isAuthorized(readEvent(1003)).verdict === "allow", "and enables the read");
+  auth.free();
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

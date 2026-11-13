@@ -56,7 +56,7 @@ const SCHEMA = `namespace Drupe {
   type ReadOutput = { content: String };
   action "Read" appliesTo {
     principal: [OAuthUser], resource: [Gateway],
-    context: { input: ReadInput, output: ReadOutput }
+    context: { input: ReadInput, output?: ReadOutput }
   };
 }`;
 
@@ -148,7 +148,7 @@ function traceLine(ts, doc) {
     `@${ts} scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") ` +
     `request_context(input: { document: ${d} }) ` +
     `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", ` +
-    `input: { document: ${d} })`
+    `callerResource: Drupe::Gateway::"gw1", input: { document: ${d} })`
   );
 }
 
@@ -685,11 +685,11 @@ check("actions lists every schema action, including ones no policy names", () =>
   type ReadOutput = { content: String };
   action "Read" appliesTo {
     principal: [OAuthUser], resource: [Gateway],
-    context: { input: ReadInput, output: ReadOutput }
+    context: { input: ReadInput, output?: ReadOutput }
   };
   action "Write" appliesTo {
     principal: [OAuthUser], resource: [Gateway],
-    context: { input: ReadInput, output: ReadOutput }
+    context: { input: ReadInput, output?: ReadOutput }
   };
 }`;
   const auth = new dw.DogwoodAuthorizer(ALLOW_ALL, TWO_ACTIONS);
@@ -708,11 +708,10 @@ check("actions lists every schema action, including ones no policy names", () =>
   }
 });
 
-// Cedar permits an action id containing `::`; `Event::builder` recovers the id by
-// splitting on the LAST `::`, so such an action cannot be addressed at all — it
-// used to deny with an empty `errors`, the same indistinguishable-from-policy
-// failure a bare id gave. Rejected on the same grounds.
-check("an action id containing `::` is rejected, not silently un-addressable", () => {
+// Cedar permits an action id containing `::` (or a leading/trailing `:`). The
+// live path builds the event from the schema's own namespace and id rather than
+// re-splitting the qualified string, so such an action is addressed exactly.
+check("an action id containing `::` is addressed exactly", () => {
   const INNER = `namespace Drupe {
   entity Gateway;
   entity OAuthUser = { id: String } tags String;
@@ -720,7 +719,7 @@ check("an action id containing `::` is rejected, not silently un-addressable", (
   type ReadOutput = { content: String };
   action "Read::Extra" appliesTo {
     principal: [OAuthUser], resource: [Gateway],
-    context: { input: ReadInput, output: ReadOutput }
+    context: { input: ReadInput, output?: ReadOutput }
   };
 }`;
   const auth = new dw.DogwoodAuthorizer(
@@ -728,19 +727,13 @@ check("an action id containing `::` is rejected, not silently un-addressable", (
     INNER,
   );
   try {
-    // It IS in the schema, so `actions` lists it — the rejection is about the
-    // builder's addressing limit, not about the action being unknown.
     assert(
       JSON.stringify(auth.actions) === JSON.stringify(["Drupe::Action::Read::Extra"]),
       "listed in actions, got " + JSON.stringify(auth.actions),
     );
-    const e = throws(
-      () => auth.isAuthorized(event(1, { action: "Drupe::Action::Read::Extra" })),
-      "an un-addressable action must not look like a decision",
-    );
-    assert(e.name === "DogwoodError", "name, got " + e.name);
-    assert(/not supported|last `::`/.test(e.message), "explains why, got " + e.message);
-    assert(!/unknown action/.test(e.message), "and does NOT claim it is unknown");
+    const d = auth.isAuthorized(event(1, { action: "Drupe::Action::Read::Extra" }));
+    assert(d !== undefined && d.verdict === "allow", "decides, got " + JSON.stringify(d));
+    assert(d.errors.length === 0, "with no errors, got " + JSON.stringify(d.errors));
   } finally {
     auth.free();
   }
@@ -757,7 +750,7 @@ type ReadInput = { document: String };
 type ReadOutput = { content: String };
 action "Read" appliesTo {
   principal: [OAuthUser], resource: [Gateway],
-  context: { input: ReadInput, output: ReadOutput }
+  context: { input: ReadInput, output?: ReadOutput }
 };`;
   const auth = new dw.DogwoodAuthorizer(
     `permit(principal, action == Action::"Read", resource);`,
@@ -944,12 +937,37 @@ check("a malformed event throws but leaves the instance fully usable", () => {
 check("optional event fields all default", () => {
   const auth = new dw.DogwoodAuthorizer(ALLOW_ALL, SCHEMA);
   try {
-    // Only `action` is required; everything else has a default. A bare event
-    // must not throw (it decides on an empty request, which denies).
-    const d = auth.isAuthorized({ action: "Drupe::Action::Read" });
+    // Only `action` and `timestamp` are required; everything else has a
+    // default. A bare event must not throw (it decides on an empty request,
+    // which denies).
+    const d = auth.isAuthorized({ action: "Drupe::Action::Read", timestamp: 7 });
     assert(d !== undefined, "kind defaults to `request`, so this is a decision point");
-    assert(d.timestamp === 0, "timestamp defaults to 0, got " + d.timestamp);
+    assert(d.timestamp === 7, "timestamp echoed back, got " + d.timestamp);
     assert(d.verdict === "deny", "an attribute-less request denies");
+  } finally {
+    auth.free();
+  }
+});
+
+check("a missing timestamp throws instead of defaulting to the epoch", () => {
+  const auth = new dw.DogwoodAuthorizer(ALLOW_ALL, SCHEMA);
+  try {
+    const e = throws(() => auth.isAuthorized({ action: "Drupe::Action::Read" }));
+    assert(/timestamp/.test(e.message), "names the field, got " + e.message);
+    assert(auth.lastTimestamp === undefined, "and nothing entered the history");
+  } finally {
+    auth.free();
+  }
+});
+
+check("numbers with no Cedar rendering throw a naming Error", () => {
+  const auth = new dw.DogwoodAuthorizer(ALLOW_ALL, SCHEMA);
+  try {
+    const bad = (v) => () => auth.isAuthorized(event(1, { logged: { input: { document: "d" }, e: { x: v } } }));
+    // 1e308 is integral, so it is reported as a Long out of range.
+    assert(/out of range/.test(throws(bad(1e308)).message), "huge float");
+    assert(/exponent form/.test(throws(bad(1e-7)).message), "tiny float");
+    assert(auth.decisionCount === 0, "neither counted as a decision");
   } finally {
     auth.free();
   }
@@ -1072,7 +1090,7 @@ check("replay and isAuthorized agree on evaluation errors, event by event", () =
       return (
         `@${i + 1} scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") ` +
         `request_context(input: ${v}) ` +
-        `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", input: ${v})`
+        `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", callerResource: Drupe::Gateway::"gw1", input: ${v})`
       );
     })
     .join("\n");
@@ -1220,17 +1238,19 @@ check("lastTimestamp is a number, comparable with a decision's timestamp", () =>
 // trace path these tests fail and the README stops being wrong.
 console.log("\nknown limitations (recorded, not endorsed)");
 
-check("LIMITATION: replay does not reject a bare action id — it denies silently", () => {
+check("replay states a cause for a bare action id (no silent deny)", () => {
   const bare =
     `@1 scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") ` +
     `request_context(input: { document: "d" }) ` +
-    `Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", input: { document: "d" })`;
+    `Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", callerResource: Drupe::Gateway::"gw1", input: { document: "d" })`;
   const r = dw.replay(ALLOW_ALL, SCHEMA, bare);
   assert(r.verdicts.length === 1, "the trace still produces a verdict");
   assert(r.verdicts[0].verdict === "deny", "and it denies, got " + r.verdicts[0].verdict);
+  // Dogwood 1.2 rejects an event its schema declares no signature for, so the
+  // deny is no longer indistinguishable from "policy said no".
   assert(
-    r.verdicts[0].errors.length === 0,
-    "with NO stated cause — the live authorizer rejects this, replay does not",
+    r.verdicts[0].errors.some((e) => /declares no event/.test(e)),
+    "with the cause stated, got " + JSON.stringify(r.verdicts[0].errors),
   );
 });
 
@@ -1238,7 +1258,7 @@ check("LIMITATION: replay accepts a backwards timestamp in a trace", () => {
   const line = (ts) =>
     `@${ts} scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") ` +
     `request_context(input: { document: "d" }) ` +
-    `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", input: { document: "d" })`;
+    `Drupe::Action::"Read"::request(callerPrincipal: Drupe::OAuthUser::"alice", callerResource: Drupe::Gateway::"gw1", input: { document: "d" })`;
   const r = dw.replay(ALLOW_ALL, SCHEMA, `${line(100)}\n${line(50)}`);
   assert(r.verdicts.length === 2, "both events replay");
   assert(
