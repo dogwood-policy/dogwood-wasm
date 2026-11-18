@@ -65,9 +65,16 @@ namespace Drupe {
     action "Read" appliesTo {
         principal: [User],
         resource: [Gateway],
-        context: { input: ReadInput, output: ReadOutput }
+        context: { input: ReadInput, output?: ReadOutput }
     };
 }`;
+/**
+ * ACTION_SCHEMA with `input.extra` declared as `type`. Dogwood 1.2 checks a
+ * request's context against the schema, so an in-bounds value a test wants
+ * *allowed* must be declared; an undeclared one is a fail-closed deny.
+ */
+const schemaWithExtra = (type) =>
+  ACTION_SCHEMA.replace("{ document: String, user: String }", `{ document: String, user: String, extra?: ${type} }`);
 const POLICY = `permit(principal, action == Drupe::Action::"Read", resource)
 when { context.input.document like "*report*" };`;
 
@@ -79,6 +86,7 @@ function readEvent(ts, extra) {
     timestamp: ts,
     principal: { type: "Drupe::User", id: "alice" },
     resource: { type: "Drupe::Gateway", id: "gw1" },
+    logged: { input },
     context: { input },
   };
 }
@@ -169,9 +177,12 @@ check("the live depth limit matches replay's, value for value", () => {
       `${make.name}(${n}): replay ${replayOk ? "accepts" : "rejects"}, live ${liveOk ? "accepts" : "rejects"}`,
     );
   }
-  // And the boundary is where we think it is.
+  // And the boundary is where we think it is. A 127-deep record has no Cedar
+  // type (types cannot recurse), so it is decided — a fail-closed deny for the
+  // undeclared attribute — rather than thrown by the depth limit.
   const auth = new dw.DogwoodAuthorizer(POLICY, ACTION_SCHEMA);
-  assert(auth.isAuthorized(readEvent(1, nestedObject(127))).allowed, "127 accepted");
+  const d127 = auth.isAuthorized(readEvent(1, nestedObject(127)));
+  assert(d127 && !d127.errors.some((e) => DEEP.test(e)), "127 accepted by the depth limit");
   throwsDogwoodError(() => auth.isAuthorized(readEvent(2, nestedObject(128))), DEEP);
   auth.free();
 });
@@ -207,7 +218,7 @@ check("a cyclic value throws instead of looping or overflowing", () => {
 });
 
 check("an event with more than 100,000 values throws", () => {
-  const auth = new dw.DogwoodAuthorizer(POLICY, ACTION_SCHEMA);
+  const auth = new dw.DogwoodAuthorizer(POLICY, schemaWithExtra("Set<Long>"));
   throwsDogwoodError(
     () => auth.isAuthorized(readEvent(1, new Array(100001).fill(0))),
     /more than the limit of 100000 values/,
@@ -238,7 +249,7 @@ check("a very wide array or Map is rejected before its elements are walked", () 
 });
 
 check("event strings over 16 Mi characters throw; a 1 MiB argument is fine", () => {
-  const auth = new dw.DogwoodAuthorizer(POLICY, ACTION_SCHEMA);
+  const auth = new dw.DogwoodAuthorizer(POLICY, schemaWithExtra("String"));
   throwsDogwoodError(
     () => auth.isAuthorized(readEvent(1, "x".repeat(16 * 1024 * 1024 + 1))),
     /strings total more than the limit/,

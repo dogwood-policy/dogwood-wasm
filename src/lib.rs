@@ -3,12 +3,12 @@
 
 //! TypeScript / WebAssembly bindings for the Dogwood policy frontend.
 //!
-//! This crate is a thin `wasm-bindgen` shell over the same curated public
-//! surface of `dogwood-language` that the `dogwood` CLI drives. The operations
-//! ([`ops`]) are `&str` in, owned-serializable-report out; here we expose them
-//! to JavaScript, converting each report to a real JS object (via
-//! `serde-wasm-bindgen`, with TS `interface`s emitted by `tsify`) and each
-//! fatal error to a thrown `Error` carrying the structured diagnostic.
+//! This crate is a thin `wasm-bindgen` shell over `dogwood-ops`, the
+//! host-neutral operations the `dogwood` CLI and the other language bindings
+//! share. Those are `&str` in, owned-serializable-report out; here we expose
+//! them to JavaScript, converting each report to a real JS object (via
+//! `serde-wasm-bindgen`, with the TS `interface`s declared in [`types`]) and
+//! each fatal error to a thrown `Error` carrying the structured diagnostic.
 //!
 //! ## Surface
 //!
@@ -25,28 +25,17 @@
 //! | `mcpToCedarSchema`     | MCP manifest -> Cedar | no                   |
 
 mod bounds;
-mod error;
-mod fail_closed;
 pub mod live;
-mod ops;
-pub(crate) mod providers;
+mod types;
 
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use error::OpError;
-use ops::SchemaInputs;
+use dogwood_ops::{OpError, ops};
 
 // The live, stateful authorizer (lower once, feed events as they happen), the
-// counterpart to the one-shot `replay` above.
-pub use live::{AuthorizerDecision, DogwoodAuthorizer, EntityInput, EntityRef, EventInput};
-
-// Re-export the report types so their `Tsify`-generated TS interfaces are in
-// scope for the exported function signatures below.
-pub use error::{Diagnostic, Label, Severity};
-pub use ops::{
-    CheckParseReport, ExplainReport, LowerArtifacts, PolicySummary, ReplayReport, SchemaCheckReport,
-    TimepointVerdict, ValidateReport, Verdict,
-};
+// counterpart to the one-shot `replay` below.
+pub use live::DogwoodAuthorizer;
 
 // ─── error shape (documented for the thrown Error's `.diagnostic`) ─────
 //
@@ -120,81 +109,73 @@ pub(crate) fn throw(e: OpError) -> JsValue {
     err.into()
 }
 
-/// Build the optional service-schema overrides from three optional strings.
-///
-/// Fallible only because of the `scriptFile` guard (see [`providers`]): supplied
-/// provider text is parsed here purely to reject a declaration that cannot work
-/// in wasm, and then parsed again by [`ops::SchemaInputs`], which is copied
-/// from `dogwood-cli` and so cannot carry the check itself. Two parses of a small
-/// JSON document, only when providers are supplied at all, is the right price for
-/// keeping `ops` in sync with the CLI (see `scripts/check-cli-sync.sh`).
+/// Convert a report into a real JS object, exactly as `tsify` used to (the
+/// default `serde-wasm-bindgen` serializer).
+fn to_js<T: Serialize>(report: &T) -> Result<JsValue, JsValue> {
+    serde_wasm_bindgen::to_value(report)
+        .map_err(|e| throw(OpError::message(format!("internal: {e}"))))
+}
+
+/// The optional service-schema overrides, with the `scriptFile` guard applied
+/// (see `dogwood_ops::providers`).
 fn inputs<'a>(
-    event_schema: Option<&'a str>,
-    providers: Option<&'a str>,
-    macros: Option<&'a str>,
-) -> Result<SchemaInputs<'a>, OpError> {
-    if let Some(json) = providers {
-        crate::providers::parse_declarations(json)?;
-    }
-    Ok(SchemaInputs {
-        event_schema,
-        providers,
-        macros,
-    })
+    event_schema: &'a Option<String>,
+    providers: &'a Option<String>,
+    macros: &'a Option<String>,
+) -> Result<dogwood_ops::SchemaInputs<'a>, JsValue> {
+    dogwood_ops::inputs(event_schema.as_deref(), providers.as_deref(), macros.as_deref())
+        .map_err(throw)
 }
 
 // ─── exported operations ────────────────────────────────────────────────
 
 /// Parse and macro-expand a `.dw` policy set, reporting syntax/macro errors and
 /// per-policy structural summaries. Needs no action schema.
-#[wasm_bindgen(js_name = checkParse)]
+#[wasm_bindgen(js_name = checkParse, unchecked_return_type = "CheckParseReport")]
 pub fn check_parse(
     source: &str,
     event_schema: Option<String>,
     providers: Option<String>,
     macros: Option<String>,
-) -> Result<CheckParseReport, JsValue> {
-    let schema =
-        inputs(event_schema.as_deref(), providers.as_deref(), macros.as_deref()).map_err(throw)?;
-    ops::check_parse(source, &schema).map_err(throw)
+) -> Result<JsValue, JsValue> {
+    let schema = inputs(&event_schema, &providers, &macros)?;
+    to_js(&ops::check_parse(source, &schema).map_err(throw)?)
 }
 
 /// Lower against the Cedar action schema and type-check. Fatal parse/lower
 /// errors throw; a successful lower with type findings returns the report.
-#[wasm_bindgen]
+#[wasm_bindgen(unchecked_return_type = "ValidateReport")]
 pub fn validate(
     source: &str,
     action_schema: &str,
     event_schema: Option<String>,
     providers: Option<String>,
     macros: Option<String>,
-) -> Result<ValidateReport, JsValue> {
-    let schema =
-        inputs(event_schema.as_deref(), providers.as_deref(), macros.as_deref()).map_err(throw)?;
-    ops::validate_policies(source, &schema, action_schema).map_err(throw)
+) -> Result<JsValue, JsValue> {
+    let schema = inputs(&event_schema, &providers, &macros)?;
+    to_js(&ops::validate_policies(source, &schema, action_schema).map_err(throw)?)
 }
 
 /// Lower a `.dw` policy set to Cedar and return the emitted artifacts (policies
 /// and augmented schema, in text and Cedar-JSON forms).
-#[wasm_bindgen]
+#[wasm_bindgen(unchecked_return_type = "LowerArtifacts")]
 pub fn lower(
     source: &str,
     action_schema: &str,
     event_schema: Option<String>,
     providers: Option<String>,
     macros: Option<String>,
-) -> Result<LowerArtifacts, JsValue> {
-    let schema =
-        inputs(event_schema.as_deref(), providers.as_deref(), macros.as_deref()).map_err(throw)?;
-    ops::lower_to_cedar(source, &schema, action_schema).map_err(throw)
+) -> Result<JsValue, JsValue> {
+    let schema = inputs(&event_schema, &providers, &macros)?;
+    to_js(&ops::lower_to_cedar(source, &schema, action_schema).map_err(throw)?)
 }
 
 /// Lower, then drive a `.log` event trace through a stateful authorizer,
 /// returning the per-decision verdict stream.
 ///
 /// Any evaluation error forces a deny, exactly as in
-/// `DogwoodAuthorizer::isAuthorized` (see [`fail_closed`]).
-#[wasm_bindgen]
+/// `DogwoodAuthorizer::isAuthorized` (see `dogwood_ops::fail_closed`).
+#[wasm_bindgen(unchecked_return_type = "ReplayReport")]
 pub fn replay(
     source: &str,
     action_schema: &str,
@@ -202,69 +183,51 @@ pub fn replay(
     event_schema: Option<String>,
     providers: Option<String>,
     macros: Option<String>,
-) -> Result<ReplayReport, JsValue> {
-    let schema =
-        inputs(event_schema.as_deref(), providers.as_deref(), macros.as_deref()).map_err(throw)?;
-    let mut report = ops::replay_trace(source, &schema, action_schema, log).map_err(throw)?;
-    // Applied here rather than in the copied `ops.rs`, which must match
-    // dogwood-cli (passing Cedar's decision through).
-    for v in &mut report.verdicts {
-        fail_closed::fail_closed(&mut v.verdict, &mut v.determining_rules, &v.errors);
-    }
-    Ok(report)
+) -> Result<JsValue, JsValue> {
+    let schema = inputs(&event_schema, &providers, &macros)?;
+    to_js(&dogwood_ops::replay(source, &schema, action_schema, log).map_err(throw)?)
 }
 
 /// Parse (with macro expansion) and informalize a `.dw` policy set into
 /// deterministic semi-English, rule by rule. The action schema is optional:
 /// with it, the single declared namespace is dropped from names. Nothing is
 /// validated — an invalid-but-parsable policy is still explained.
-#[wasm_bindgen]
+#[wasm_bindgen(unchecked_return_type = "ExplainReport")]
 pub fn explain(
     source: &str,
     action_schema: Option<String>,
     event_schema: Option<String>,
     providers: Option<String>,
     macros: Option<String>,
-) -> Result<ExplainReport, JsValue> {
-    let schema =
-        inputs(event_schema.as_deref(), providers.as_deref(), macros.as_deref()).map_err(throw)?;
-    ops::explain_policies(source, &schema, action_schema.as_deref()).map_err(throw)
+) -> Result<JsValue, JsValue> {
+    let schema = inputs(&event_schema, &providers, &macros)?;
+    to_js(&ops::explain_policies(source, &schema, action_schema.as_deref()).map_err(throw)?)
 }
 
 /// Check a Cedar action schema (`.cedarschema`) in isolation.
-#[wasm_bindgen(js_name = checkActionSchema)]
-pub fn check_action_schema(source: &str) -> Result<SchemaCheckReport, JsValue> {
-    ops::check_action_schema(source).map_err(throw)
+#[wasm_bindgen(js_name = checkActionSchema, unchecked_return_type = "SchemaCheckReport")]
+pub fn check_action_schema(source: &str) -> Result<JsValue, JsValue> {
+    to_js(&ops::check_action_schema(source).map_err(throw)?)
 }
 
 /// Check an event-schema DSL (`.dwschema`) in isolation.
-#[wasm_bindgen(js_name = checkEventSchema)]
-pub fn check_event_schema(source: &str) -> Result<SchemaCheckReport, JsValue> {
-    ops::check_event_schema(source).map_err(throw)
+#[wasm_bindgen(js_name = checkEventSchema, unchecked_return_type = "SchemaCheckReport")]
+pub fn check_event_schema(source: &str) -> Result<JsValue, JsValue> {
+    to_js(&ops::check_event_schema(source).map_err(throw)?)
 }
 
 /// Check an information-provider declarations file (`providers.json`) in
-/// isolation.
-#[wasm_bindgen(js_name = checkProviders)]
-pub fn check_providers(json: &str) -> Result<SchemaCheckReport, JsValue> {
-    // The `scriptFile` guard runs first, so a declaration that is well-formed but
-    // unusable here throws rather than reporting `ok: true` — see `providers`.
-    providers::parse_declarations(json).map_err(throw)?;
-    ops::check_providers(json).map_err(throw)
+/// isolation. A declaration that is well-formed but unusable here (an
+/// unresolvable `scriptFile`) throws rather than reporting `ok: true`.
+#[wasm_bindgen(js_name = checkProviders, unchecked_return_type = "SchemaCheckReport")]
+pub fn check_providers(json: &str) -> Result<JsValue, JsValue> {
+    to_js(&dogwood_ops::check_providers(json).map_err(throw)?)
 }
 
 /// Generate a Cedar action schema (`.cedarschema` text) from an MCP
-/// `tools/list` manifest, layered on the embedded Drupe template.
+/// `tools/list` manifest, layered on the embedded Drupe template. The manifest
+/// is bounded before its (recursive) parser sees it.
 #[wasm_bindgen(js_name = mcpToCedarSchema)]
 pub fn mcp_to_cedar_schema(manifest_json: &str) -> Result<String, JsValue> {
-    // A manifest comes from a third-party MCP server, and its parser recurses
-    // per nesting level with no cap of its own; bound it before parsing.
-    bounds::check_json_text(
-        "manifest",
-        manifest_json,
-        bounds::MAX_MANIFEST_BYTES,
-        bounds::MAX_MANIFEST_DEPTH,
-    )
-    .map_err(|e| throw(OpError::message(e)))?;
-    ops::generate_mcp_schema(manifest_json).map_err(throw)
+    dogwood_ops::mcp_to_cedar_schema(manifest_json).map_err(throw)
 }
