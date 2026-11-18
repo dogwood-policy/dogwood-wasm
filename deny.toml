@@ -12,6 +12,12 @@ ignore = [
     # rhai -> dogwood-language, and no fixed version exists. Drop this once
     # rhai moves off it. Owner: Dogwood maintainers.
     { id = "RUSTSEC-2026-0249", reason = "transitive via rhai; no maintained alternative upstream yet" },
+    # chrono is unmaintained (no vulnerability). It reaches us only via
+    # cedar-policy-core and mcp-tools-sdk -> dogwood-language, and no fixed
+    # version exists. Drop this once Cedar stops pulling it in; tracked
+    # upstream in https://github.com/cedar-policy/cedar/issues/2707.
+    # Owner: Dogwood maintainers.
+    { id = "RUSTSEC-2026-0543", reason = "transitive via cedar-policy-core; no maintained alternative upstream yet" },
 ]
 
 [licenses]
